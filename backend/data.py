@@ -1,0 +1,127 @@
+"""Read-only source discovery and explicit physical LPS geometry."""
+import ast
+import csv
+import json
+import os
+import hashlib
+import re
+from pathlib import Path
+import nibabel as nib
+import numpy as np
+from scipy.ndimage import map_coordinates
+
+ROOT = Path(__file__).resolve().parents[1]
+LPS_FROM_RAS = np.diag([-1., -1., 1., 1.])
+
+def read_case_config():
+    path = Path(os.environ.get("CORONARY_CASE_CONFIG", ROOT / "config/case.local.json"))
+    conf = json.loads(path.read_text())
+    pid = str(conf['patientId'])
+    if not re.fullmatch(r'[A-Za-z0-9_-]+',pid):
+        raise ValueError('patientId must be a single case identifier')
+    return {**conf,'patientId':pid}
+
+def configuration_key():
+    conf = read_case_config()
+    defaults = Path(conf['pipelineRoot'])/'config/defaults.py'
+    return hashlib.sha256(json.dumps([conf,defaults.read_text()],sort_keys=True).encode()).hexdigest()
+
+def configuration():
+    conf = read_case_config()
+    defaults_path = Path(conf["pipelineRoot"]) / "config/defaults.py"
+    # Parse literal assignments without importing torch, yacs, or pipeline side effects.
+    values = {}
+    for node in ast.walk(ast.parse(defaults_path.read_text())):
+        if isinstance(node, ast.Assign):
+            try:
+                values[ast.unparse(node.targets[0])] = ast.literal_eval(node.value)
+            except (ValueError, TypeError):
+                pass
+    names = {k: values[f"_C.{v}.OUT_DIRNAME"] for k, v in {
+        "lumen": "POSTPROCESSING", "segmentation": "LUMEN_SEGMENTATION",
+        "cpe": "PERILUMINAL_EXTRACTION", "labeling": "CENTERLINE_LABELING",
+        "mesh": "MESH_EXTRACTION", "centerline": "CENTERLINE_EXTRACTION",
+        "mpr": "MPR_EXTRACTION", "radiomics": "RADIOMICS"}.items()}
+    if names["cpe"] != "periluminal_r4":
+        raise ValueError("Pipeline CPE output is not periluminal_r4; explicitly review configuration.")
+    conf["directories"] = names
+    conf["sampling"] = {k: values[f"_C.MPR_EXTRACTION.{v}"] for k, v in {
+        "resolutionMm": "TARGET_RESOLUTION", "widthPixels": "MPR_WIDTH",
+        "pointSpacingMm": "POINT_SPACING", "resample": "RESAMPLE_CENTERLINE"}.items()}
+    conf["cpeLengthMm"] = values["_C.PERILUMINAL_EXTRACTION.LENGTH"]
+    conf["skipMm"] = values["_C.PERILUMINAL_EXTRACTION.SKIP_MM"]
+    out, pid = Path(conf["outputRoot"]), conf["patientId"]
+    if out.name != pid:
+        raise ValueError(f'outputRoot case {out.name} does not match patientId {pid}')
+    ct_id = re.fullmatch(r'(\d+)\.nii(?:\.gz)?',Path(conf['ct']).name)
+    if ct_id and ct_id[1] != pid:
+        raise ValueError(f'CCTA case {ct_id[1]} does not match patientId {pid}')
+    paths = {"ct": Path(conf["ct"])}
+    aorta=Path(conf.get('ascendingAorta',out/'cardiac_structures'/'asc_aorta_shell.nii.gz'))
+    if aorta.is_file() or 'ascendingAorta' in conf:paths['ascending_aorta']=aorta
+    for side in ["merged", "left", "right"]:
+        paths[f"lumen_{side}"] = out / names["lumen"] / f"{pid}_lumen_mask_post_{side}.nii.gz"
+    for vessel, filename in conf["centerlineFiles"].items():
+        if Path(filename).name != filename or not filename.startswith(f'{pid}_'):
+            raise ValueError(f'{vessel} centerline {filename} does not match case {pid}')
+        paths[f"cpe_{vessel}"] = out / names["cpe"] / f"{pid}_{vessel.upper()}_periluminal.nii.gz"
+        paths[f"line_{vessel}"] = out / names["labeling"] / filename
+        paths[f"markup_{vessel}"] = paths[f"line_{vessel}"].with_suffix(".mrk.json")
+    from .features import discover_maps
+    conf['featureFiles']=discover_maps(conf.get('radiomicFeatureMaps'))
+    for entries in conf['featureFiles'].values():
+        for entry in entries:paths['feature_'+entry['id']]=Path(entry['path'])
+    missing = [str(p) for p in paths.values() if not p.is_file()]
+    if missing:
+        raise FileNotFoundError("Required source files unavailable (check /Volumes/X9Pro mount): " + ", ".join(missing))
+    return conf, paths
+
+def image(path):
+    img = nib.load(str(path))
+    return img, LPS_FROM_RAS @ img.affine
+
+def sample(data, affine_lps, points, order=0, outside=0):
+    points = np.asarray(points)
+    inverse = np.linalg.inv(affine_lps)
+    ijk = points.reshape(-1, 3) @ inverse[:3, :3].T + inverse[:3, 3]
+    return map_coordinates(data, ijk.T, order=order, mode="constant", cval=outside,
+                           prefilter=False).reshape(points.shape[:-1])
+
+def centerline(path):
+    with path.open() as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames != ["x", "y", "z", "radius", "zone"]:
+            raise ValueError(f"Unexpected inspected CSV schema: {reader.fieldnames}")
+        rows = [[float(row[c]) for c in ["x", "y", "z", "radius", "zone"]] for row in reader]
+    values = np.asarray(rows)
+    if len(values) < 2 or not np.isfinite(values).all():
+        raise ValueError("Invalid centerline")
+    return values
+
+def resample_frames(values, spacing):
+    points = values[:, :3]
+    keep = np.r_[True, np.linalg.norm(np.diff(points, axis=0), axis=1) > 1e-6]
+    points, radii = points[keep], values[keep, 3]
+    distance = np.r_[0., np.cumsum(np.linalg.norm(np.diff(points, axis=0), axis=1))]
+    distances = np.unique(np.r_[np.arange(0., distance[-1], spacing), distance[-1]])
+    points = np.column_stack([np.interp(distances, distance, points[:, c]) for c in range(3)])
+    radius = np.interp(distances, distance, radii)
+    tangent = np.gradient(points, distances, axis=0)
+    tangent /= np.linalg.norm(tangent, axis=1)[:, None]
+    # Minimal-rotation parallel transport, then orthonormalize. Never reset the normal.
+    axis = np.eye(3)[np.argmin(np.abs(tangent[0]))]
+    u = np.zeros_like(points)
+    u[0] = np.cross(tangent[0], axis)
+    u[0] /= np.linalg.norm(u[0])
+    for i in range(1, len(points)):
+        a, b = tangent[i-1], tangent[i]
+        cross = np.cross(a, b)
+        cosine = np.clip(np.dot(a, b), -1., 1.)
+        if cosine < -0.999999:
+            raise ValueError("Centerline reverses direction; frame is ambiguous")
+        u[i] = u[i-1] + np.cross(cross, u[i-1]) + np.cross(cross, np.cross(cross, u[i-1])) / (1 + cosine)
+        u[i] -= np.dot(u[i], b) * b
+        u[i] /= np.linalg.norm(u[i])
+    v = np.cross(tangent, u)
+    return {"points": points.tolist(), "distances": distances.tolist(), "radii": radius.tolist(),
+            "u": u.tolist(), "v": v.tolist(), "tangents": tangent.tolist()}

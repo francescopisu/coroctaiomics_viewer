@@ -1,0 +1,9 @@
+.venv/
+node_modules/
+.npm-cache/
+test-results/
+dist/
+cache/
+__pycache__/
+*.pyc
+*.log

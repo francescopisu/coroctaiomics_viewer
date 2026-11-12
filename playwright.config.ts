@@ -1,0 +1,2 @@
+import {defineConfig} from '@playwright/test';
+export default defineConfig({testDir:'./tests',testMatch:'*.spec.ts',timeout:60000,workers:1,use:{baseURL:process.env.CORONARY_TEST_URL??'http://127.0.0.1:5173',viewport:{width:1500,height:1000},headless:true,launchOptions:{...(process.platform==='darwin'?{executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'}:{}),args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']}}});
