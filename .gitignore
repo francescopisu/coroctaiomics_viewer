@@ -1,4 +1,5 @@
 .venv/
+.venv-ai/
 node_modules/
 .npm-cache/
 test-results/

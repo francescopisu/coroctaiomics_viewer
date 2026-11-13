@@ -4,7 +4,7 @@ import json
 import os
 import numpy as np
 from skimage.measure import marching_cubes
-from .data import ROOT, configuration, configuration_key, image, centerline, resample_frames, sample
+from .data import ROOT, configuration, configuration_key, image, centerline, resample_frames, sample, CASE_INTERPRETATION
 from .inspect_case import inspect
 from .volumes import prepare_volumes,prepare_axial_volume
 from .features import prepare_features
@@ -111,7 +111,7 @@ def prepare(force=False):
         "vessels": {v: {**f, "ct": prefix+f'{v}.ct.bin', "lumen": prefix+f'{v}.lumen.bin', "cpe": prefix+f'{v}.cpe.bin',
                         "ctCPR": prefix+f'{v}.ct.cpr.bin', "lumenCPR": prefix+f'{v}.lumen.cpr.bin', "cpeCPR": prefix+f'{v}.cpe.cpr.bin'} for v, f in frames.items()},
         "assets": assets,
-        "interpretation": "CPE is a lumen-excluded radiomic sampling region; not a tissue classification, plaque or disease map. PRI is patient-level and is not computed or spatially mapped."}
+        "interpretation": CASE_INTERPRETATION}
     temp = directory/'manifest.tmp'; temp.write_text(json.dumps(manifest)); os.replace(temp, manifest_path)
     print(f'Ready: {directory}; {sum((directory / a).stat().st_size for a in assets)/1e6:.1f} MB of viewer assets.', flush=True)
 

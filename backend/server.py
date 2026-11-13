@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
-from .data import ROOT, read_case_config, configuration_key
+from .data import ROOT, read_case_config, configuration_key, CASE_INTERPRETATION
 
 app = FastAPI(title='Coronary CPE viewer', docs_url=None, redoc_url=None)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -36,7 +36,8 @@ def get_current_case():
 @app.get('/api/cases/{case_id}')
 def get_case(case_id: str):
     m = manifest(case_id)
-    return JSONResponse({k:v for k,v in m.items() if k not in ['assets','signature','configurationKey']},headers={'Cache-Control':'no-store'})
+    return JSONResponse({**{k:v for k,v in m.items() if k not in ['assets','signature','configurationKey']},
+                         'interpretation':CASE_INTERPRETATION},headers={'Cache-Control':'no-store'})
 
 @app.get('/api/cases/{case_id}/assets/{name}')
 def get_asset(case_id: str, name: str):
@@ -47,6 +48,19 @@ def get_asset(case_id: str, name: str):
     if not path.is_file():
         raise HTTPException(503, 'Incomplete cache; rerun preparation')
     return FileResponse(path, media_type='application/octet-stream', headers={'Cache-Control': 'no-cache'})
+
+@app.get('/api/cases/{case_id}/ai')
+def get_ai(case_id: str):
+    manifest(case_id)  # Same configured-patient access boundary as the imaging API.
+    from .ai import results
+    try:
+        return JSONResponse(results(case_id), headers={'Cache-Control': 'no-store'})
+    except LookupError as error:
+        raise HTTPException(404, str(error))
+    except ValueError as error:
+        raise HTTPException(503, str(error))
+    except (OSError, KeyError, TypeError):
+        raise HTTPException(503, 'AI reference unavailable. Check config/ai.local.json and run python -m backend.export_ai.')
 
 @lru_cache(maxsize=1)
 def axial_arrays(case_id, revision):

@@ -12,6 +12,8 @@ import {navigateAxial} from './sliceNavigation';
 import {type CprMarker} from './curvedMarker';
 import {loadAxialVolume,type AxialVolume} from './axialVolume';
 import {ResourceCache} from './resourceCache';
+import {AiPanel} from './AiPanel';
+import type {AiFeature} from './aiTypes';
 
 const initial:Controls={vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:true,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:true,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
 export default function App(){
@@ -20,6 +22,8 @@ export default function App(){
   const [loaded,setLoaded]=useState<{data:Case;volumes:Record<Vessel,Volume>}>(),[nativeAxial,setNativeAxial]=useState<AxialVolume>();
   const [featureCache,setFeatureCache]=useState<{data:Case;cache:ResourceCache<FeatureVolume>}>(),[,refreshFeatures]=useState(0);
   const [markers,setMarkers]=useState<CprMarker[]>([]),[exporting,setExporting]=useState(false);
+  const [aiOpen,setAiOpen]=useState(false),aiButton=useRef<HTMLButtonElement>(null);
+  const closeAi=()=>{setAiOpen(false);aiButton.current?.focus();};
   const sceneHost=useRef<HTMLDivElement>(null),cprHost=useRef<HTMLDivElement>(null),scene=useRef<Scene|undefined>(undefined),recon=useRef<CprScene|undefined>(undefined);
   const crossCanvas=useRef<HTMLCanvasElement|null>(null),axialCanvas=useRef<HTMLCanvasElement|null>(null);
   const drag=useRef<{x:number;y:number;angle:number;view:number;mode?:'rotate'|'navigate'}|undefined>(undefined);
@@ -88,6 +92,13 @@ export default function App(){
     }catch(e){setError(`Export: ${e instanceof Error?e.message:String(e)}`);}finally{setExporting(false);}
   };
   const line=data?.vessels[c.vessel];
+  const selectAiFeature=(feature:AiFeature)=>{
+    const map=data?.featureMaps[feature.vessel].find(f=>f.name.toLowerCase()===feature.mapName.toLowerCase());
+    if(!map)return;
+    setC(old=>({...old,vessel:feature.vessel,index:old.vessel===feature.vessel?old.index:0,axialSlice:undefined,
+      straightAngle:old.vessel===feature.vessel?old.straightAngle:0,curvedAngle:old.vessel===feature.vessel?old.curvedAngle:0,
+      featureIds:{...old.featureIds,[feature.vessel]:map.id}}));
+  };
   return <><main inert={!bootDone&&!error} aria-busy={!bootDone&&!error}>
     <header className="toolbar" aria-label="Viewer controls">
       <select aria-label="Vessel" value={c.vessel} onChange={e=>select(e.target.value as Vessel)}>{vessels.map(v=><option key={v}>{v}</option>)}</select>
@@ -113,6 +124,7 @@ export default function App(){
         <label><input type="checkbox" checked={c.raw} onChange={e=>update('raw',e.target.checked)}/>CCTA</label>
         <label><input type="checkbox" checked={c.context} onChange={e=>update('context',e.target.checked)}/>3D plane</label>
       </div></details>
+      <button ref={aiButton} className="ai-toggle" aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!data}>AI</button>
       <label className="window">W<input aria-label="Window width" type="number" min="1" max="3000" value={c.width} onChange={e=>update('width',Math.max(1,+e.target.value))}/></label>
       <label className="window">L<input aria-label="Window level" type="number" value={c.level} onChange={e=>update('level',+e.target.value)}/></label>
       <button onClick={()=>{scene.current?.reset();setC(old=>({...old,curvedAngle:0,straightAngle:0}));}} disabled={!ready}>Reset</button>
@@ -137,6 +149,7 @@ export default function App(){
         <section className="panel"><h2>Cross-section</h2>{data&&<SliceView kind="cross" onNavigate={i=>update('index',i)} plane={plane} data={data} c={c} onSelect={i=>update('index',i)} register={el=>{crossCanvas.current=el;}}/>}</section>
         <section className="panel"><h2>Axial</h2>{data&&<SliceView kind="axial" onNavigate={i=>setC(old=>navigateAxial(data,old,i))} plane={axialPlane} data={data} c={c} onSelect={i=>update('index',i)} register={el=>{axialCanvas.current=el;}}/>}</section>
       </div>
+      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature}/>}
     </div>
   </main>
     {!bootDone&&!error&&<div className={`initial-loader${bootPercent===100?' complete':''}`}>

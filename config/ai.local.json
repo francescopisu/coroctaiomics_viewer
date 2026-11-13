@@ -1,0 +1,7 @@
+{
+  "derivation": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/output_no_MI_all_rad/analysis_checkpoints/20261103T104302Z_9f691260/df_der_no_hf_MEDIS_subset.csv",
+  "validation": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/output_no_MI_all_rad/analysis_checkpoints/20261103T104302Z_9f691260/df_cpc_no_hf_MEDIS_subset.csv",
+  "priModel": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/external_validation/rebuttal/CoroCTAiomics_PRI_only_artifacts.pkl",
+  "adjustedModel": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/external_validation/rebuttal/CoroCTAiomics_artifacts.pkl",
+  "thresholds": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/external_validation/rebuttal/PRI_risk_strata_thresholds.json"
+}

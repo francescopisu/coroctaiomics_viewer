@@ -11,6 +11,9 @@ import numpy as np
 from scipy.ndimage import map_coordinates
 
 ROOT = Path(__file__).resolve().parents[1]
+CASE_INTERPRETATION = ('CPE is a lumen-excluded radiomic sampling region, not a tissue classification, plaque or disease map. '
+                       'AI predictions are computed separately from patient-level features using saved Cox models. '
+                       'Voxelwise feature maps are not local event-risk predictions.')
 LPS_FROM_RAS = np.diag([-1., -1., 1., 1.])
 
 def read_case_config():

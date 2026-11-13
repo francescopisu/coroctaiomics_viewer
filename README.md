@@ -72,7 +72,43 @@ The optional ascending aorta is discovered at `outputRoot/cardiac_structures/asc
 - Select LAD, LCx or RCA in the toolbar or click a vessel in 3D. Clicking axial CCTA selects the nearest centerline sample in physical space.
 - **Layers** holds lumen/CPE/centerline visibility, opacity, color and optional 3D plane controls. **W/L** change the shared CT window. **Reset** restores the camera and zero rotation in both central views. **Export** saves all five views.
 
-The page contains only the toolbar, panel names, rotation angle, distance, orientation letters and scale reference. Scientific interpretation and implementation details are documented here.
+The imaging workspace keeps its minimal toolbar, panel names, rotation angle, orientation letters and scale references. **AI**, beside Layers, opens a compact nonmodal results panel over the lower-left view. Opening it preserves the size, camera and current position of all five views. Close with ×, the AI button or Escape; tab navigation supports arrow keys. Scientific interpretation and implementation details are documented here.
+
+### AI patient summary
+
+The AI panel shows the configured patient's **PRI-only** and **adjusted** 4-year MACE probabilities and the **PRI-only risk stratum**. Patient, Features and Cohort tabs keep secondary information separate from the persistent predictions. Results load only on first opening; reopening the panel uses the resident result. AI errors/retry stay inside this panel and do not interrupt imaging. The existing PNG Export continues to export the five imaging views, without the AI overlay.
+
+- **Patient:** recorded age, sex, ESC RF-CL percentage/class, full CAD-RADS, Agatston score, smoking, hypertension, diabetes, dyslipidemia, dyspnea, chest-pain presentation, CAD family history and BMI. The stored likelihood/class are displayed without recalculation. Unknown, absent and explicitly unspecified information is preserved; none is interpreted as a negative finding. Family history and the other report-only fields do not enter the models. The adjusted model uses the original continuous `Clinical Likelihood` and binary `SS45`, which is a separate field from full CAD-RADS.
+- **Features:** all eight native patient-level radiomic values, grouped by vessel, alongside HRs from the chosen PRI-only/adjusted model. Hover or focus an HR for its 95% interval and fitted association direction. These HRs are per training SD after preprocessing, conditional on the other model predictors, not local voxel risk. Clicking a feature selects its available vessel/map in the viewer. Map colors retain their existing numerical meaning.
+- **Cohort:** derivation patient/event counts, median age and percentage of women, plus patient-versus-median comparisons and empirical percentiles for age, Agatston and RF-CL. Percentiles exclude missing values and use midrank for ties. Calcium-score availability is shown explicitly.
+
+The PRI bar has **25% / 50% / 25%** segments and the study's right-closed boundaries: Low ≤ Q25, Intermediate Q25 < risk ≤ Q75, High > Q75. Thresholds are read from the saved **out-of-fold derivation** configuration (currently 6.4473% and 10.5730% at 48 months), cross-checked against the PRI bundle. Hover a band/tick to see the threshold. The white marker indicates category membership, centered in the assigned band. An exact PRI percentile is intentionally not inferred from the two thresholds or from in-sample refitted risks; the original out-of-fold risk distribution is not supplied. The age/calcium/RF-CL percentiles are actual empirical values.
+
+### AI data and model preparation
+
+`config/ai.local.json` points to the derivation and validation CSVs, two trusted local saved model bundles, and study threshold JSON. Override with `CORONARY_AI_CONFIG`. AI configuration is separate from imaging configuration, so it does not invalidate or rebuild CT/mesh caches. Patient IDs must be unique across the two datasets; the endpoint returns only the record matching the currently configured imaging case. An absent patient gets an explicit unavailable result, never a demonstration patient. Source paths, reference distributions, model files and all-patient data are not exposed over HTTP.
+
+Prepare AI data once in an analysis environment. In this workspace `.venv-ai` uses the existing analysis environment with a project-local neuroCombat dependency; the export command is:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 .venv-ai/bin/python -m backend.export_ai
+```
+
+To create an independent export environment instead, use Python 3.10+:
+
+```sh
+python3.10 -m venv .venv-ai
+.venv-ai/bin/python -m pip install -r requirements-ai.txt
+.venv-ai/bin/python -m backend.export_ai
+```
+
+This command **does not fit models or execute the notebook**. It reads trusted local bundles using pandas' legacy pickle compatibility reader, extracts numerical parameters for site-only ComBat, saved scaling, the Cox coefficients/centering and baseline cumulative hazard, then validates predictions against neuroHarmonize and the saved lifelines models for every complete record and single-record site cases. Old serialized sklearn estimators are never invoked. For the supplied 1,410 records, both models match within 3.4 × 10⁻¹⁶ absolute risk. Only after validation does it atomically publish `cache/ai/reference.json`; no source data, notebooks, pickles or thresholds are modified. The main `.venv` needs no additional inference dependencies and never unpickles a model on an HTTP request.
+
+Inference uses a fixed model schema. In particular, **continuous RF-CL stays numeric even for a single patient**, correcting the notebook helper's `nunique() <= 10` categorical inference for integer clinical fields. This agrees with the batch/reference model; patient 96's corrected adjusted risk is 11.4899%, rather than the notebook's saved 13.19% example. Patient 1718 is currently 12.4859% PRI-only, 10.9402% adjusted, High PRI stratum. These are model outputs, not historical patient outcomes.
+
+Historical `TIME` and `EVENT` values never enter inference or patient responses. The adjusted notebook's numeric imputer includes these outcome columns in its saved design, so this integration requires all eight radiomic inputs, known KVP and (for adjusted risk) recorded RF-CL/SS45. Missing predictors or unseen KVP explicitly disable the affected prediction rather than using outcome-dependent imputation. Supporting incomplete model inputs would require a reviewed, outcome-free preprocessing artifact; reporting fields may remain missing without blocking inference.
+
+Repeat export after changing CSVs, models, threshold files or AI configuration, then reload the page. Mounted source changes are detected by size/modification fingerprints and rejected until re-export. A validated cache remains usable when source storage is unmounted. The AI cache contains patient records and is covered by `cache/` in `.gitignore`; do not distribute it as a frontend asset.
 
 ## Inspection findings
 
@@ -142,7 +178,7 @@ The orthogonal **Lumen Øeq** reference is `2 × sqrt(area / π)`, calculated fr
 
 vtk.js **37.4.1** provides the GPU straightened and curved renderers. See [ImageCPRMapper documentation](https://kitware.github.io/vtk-js/api/Rendering_Core_ImageCPRMapper.html). CT, feature scalars and binary masks retain separate interpolation policies. The 3D texture uses the same cross-section samples, fixed transported frame and physical coordinates. The lime ring is a navigation marker. CPE colors can be customized; visibility and opacity changes are synchronized. vtk actors, textures, observers and render resources are disposed on unmount.
 
-CPEs are predefined lumen-excluded radiomic sampling regions. They are not segmented fat, plaque, inflammation or voxelwise disease attribution. Supplied voxelwise radiomic features are displayed as input data; the viewer does not compute radiomics or PRI inference. No PRI heatmaps, chamber modes, patient database, cloud deployment, annotation editing or reporting are included.
+CPEs are predefined lumen-excluded radiomic sampling regions. They are not segmented fat, plaque, inflammation or voxelwise disease attribution. Supplied voxelwise radiomic features are displayed as input data; the AI panel separately computes patient-level Cox inference from recorded scalar features. No voxelwise PRI risk predictions, chamber modes, patient database service, cloud deployment, annotation editing or reporting are included.
 
 ## Verification
 
