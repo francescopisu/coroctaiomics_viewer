@@ -302,10 +302,14 @@ prepared image data to avoid retaining an older in-memory version. Retaining
 three full-resolution sessions uses substantially more RAM/GPU memory than
 one, so warm the actual three cases on the demonstration PC before the session.
 
-First-load binary transfers use gzip level 1 rather than the default level 9.
-Compression remains lossless; native CT resolution, HU and masks are unchanged.
-This reduces CPU blocking in the loopback server during the first case opening.
-Restart the backend after updating this setting. In a fresh headless Chrome
-session on the development Mac (software WebGL, patient 8), complete initial
-opening measured 17.0 seconds before and 7.7 seconds after this change. These
-are local comparative measurements, not a Windows-PC performance guarantee.
+Native CT assets are transferred directly for loopback clients (127.0.0.1 and
+::1), avoiding server compression and browser inflation. Sparse masks, meshes
+and non-local responses still use fast gzip level 1. Native CT resolution, HU
+and masks are unchanged; streaming byte-integrity checks cover both paths.
+Restart the backend after updating this transfer policy. In fresh headless
+Chrome sessions on the development Mac (software WebGL, patient 8), complete
+initial opening measured 17.0 seconds with default gzip, 7.7 seconds with fast
+gzip, and about 5.1 seconds with direct local CT transfer. These are local
+comparative measurements, not a Windows-PC performance guarantee. CPE packing
+and renderer-setup timings are available in the 3D scene DOM data attributes
+volume-pack-ms and volume-setup-ms for further profiling.

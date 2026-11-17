@@ -9,10 +9,21 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from .data import ROOT, read_case_config, configuration_key, CASE_INTERPRETATION, catalog_configurations
 
+class ViewerGZipMiddleware(GZipMiddleware):
+    async def __call__(self, scope, receive, send):
+        # Native CT has relatively little compression benefit. Over loopback,
+        # direct transfer avoids both server compression and browser inflation.
+        path=scope.get('path','');client=scope.get('client') or ('',0)
+        local_ct=(scope['type']=='http' and client[0] in ('127.0.0.1','::1')
+                  and '/assets/' in path and path.endswith('.volume.ct.bin'))
+        if local_ct:
+            await self.app(scope,receive,send)
+        else:
+            await super().__call__(scope,receive,send)
+
 app = FastAPI(title='Coronary CPE viewer', docs_url=None, redoc_url=None)
-# Binary CCTA is streamed over loopback. Level 9 blocks the server's event loop
-# doing expensive compression during case opening for very little size benefit.
-app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=1)
+# Sparse masks, meshes and non-local responses still benefit from fast gzip.
+app.add_middleware(ViewerGZipMiddleware, minimum_size=1024, compresslevel=1)
 
 def manifest(case_id,case_config=None):
     try: conf=read_case_config(case_id) if case_config is None else case_config;configured_id=conf['patientId']

@@ -86,12 +86,15 @@ export class Scene {
     if(!this.nativeStack||this.volumePending||this.volumeFailed||this.volumeRenderer)return;
     this.volumePending=true;this.volumeStatus({phase:'preparing'});
     try{
-      const packed=await packCpeVolume(this.nativeStack,this.data.geometry,this.volumeAbort.signal);
+      const start=performance.now(),packed=await packCpeVolume(this.nativeStack,this.data.geometry,this.volumeAbort.signal);
+      this.container.dataset.volumePackMs=(performance.now()-start).toFixed(1);
       if(this.disposed)return;
+      const setup=performance.now();
       this.volumeRenderer=new CpeVolumeRenderer(this.renderer,this.data,packed);
       this.container.dataset.volumeVoxels=String(packed.count);this.container.dataset.volumeStart=packed.start.join(',');
       this.container.dataset.volumeDimensions=packed.info.dimensions.join(',');
       if(this.current)this.update(this.current,this.currentSamples);
+      this.container.dataset.volumeSetupMs=(performance.now()-setup).toFixed(1);
       this.volumeStatus({phase:'ready'});this.container.dataset.volumeReady='true';
     }catch(error){
       if(!this.disposed&&!(error instanceof DOMException&&error.name==='AbortError')){
