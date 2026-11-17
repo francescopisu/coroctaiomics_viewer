@@ -18,7 +18,7 @@ import {restoreView,saveView} from './viewState';
 import {attenuationBands} from './cpeVolumeData';
 
 const initial:Controls={render3d:'cpe',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.15,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:true,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:true,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
-export default function App({patientId,onBack}:{patientId:string;onBack:()=>void}){
+export default function App({patientId,onBack,active=true,onReady}:{patientId:string;onBack:()=>void;active?:boolean;onReady?:(id:string)=>void}){
   const [data,setData]=useState<Case>(),[c,setC]=useState(()=>restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
   const latestControls=useRef(c);latestControls.current=c;
   useEffect(()=>()=>saveView(patientId,latestControls.current),[patientId]);
@@ -49,9 +49,11 @@ export default function App({patientId,onBack}:{patientId:string;onBack:()=>void
   useEffect(()=>{
     if(!data||!sceneHost.current||!cprHost.current)return;const abort=new AbortController();
     const s=new Scene(sceneHost.current,data,select,setVolumeStatus),r=new CprScene(cprHost.current,data,setMarkers);scene.current=s;recon.current=r;
+    s.setActive(active);r.setActive(active);
     s.load(abort.signal,downloads).then(()=>{if(!abort.signal.aborted)setReady(true);}).catch(e=>{if(e.name!=='AbortError')setError(e.message);});
     return()=>{abort.abort();scene.current=undefined;recon.current=undefined;r.dispose();s.dispose();};
   },[data]);
+  useEffect(()=>{scene.current?.setActive(active);recon.current?.setActive(active);},[active,data]);
   useEffect(()=>{
     if(!data)return;const abort=new AbortController(),owned:Volume[]=[];let shared:SharedCt|undefined;setLoaded(undefined);setNativeAxial(undefined);
     const native=loadAxialVolume(data.axialVolume,data.geometry.shape,abort.signal,downloads).then(stack=>{
@@ -84,6 +86,7 @@ export default function App({patientId,onBack}:{patientId:string;onBack:()=>void
     });});
     return()=>{cancelAnimationFrame(first);cancelAnimationFrame(second);clearTimeout(timer);};
   },[startupComplete,bootDone,downloads]);
+  useEffect(()=>{if(bootDone)onReady?.(patientId);},[bootDone,onReady,patientId]);
   const line=data?.vessels[c.vessel];
   const selectAiFeature=(feature:AiFeature)=>{
     const map=data?.featureMaps[feature.vessel].find(f=>f.name.toLowerCase()===feature.mapName.toLowerCase());
@@ -153,10 +156,10 @@ export default function App({patientId,onBack}:{patientId:string;onBack:()=>void
           {!volume&&<span className="loading">Loading…</span>}
         </div>)}</section>
       <div className="right-views">
-        <section className="panel"><h2>Cross-section</h2>{data&&<SliceView kind="cross" onNavigate={i=>update('index',i)} plane={plane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
-        <section className="panel"><h2>Axial</h2>{data&&<SliceView kind="axial" onNavigate={i=>setC(old=>navigateAxial(data,old,i))} plane={axialPlane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
+        <section className="panel"><h2>Cross-section</h2>{data&&<SliceView active={active} kind="cross" onNavigate={i=>update('index',i)} plane={plane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
+        <section className="panel"><h2>Axial</h2>{data&&<SliceView active={active} kind="axial" onNavigate={i=>setC(old=>navigateAxial(data,old,i))} plane={axialPlane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
       </div>
-      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
+      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={active&&aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
     </div>
   </main>
     {!bootDone&&!error&&<div className={`initial-loader${bootPercent===100?' complete':''}`}>

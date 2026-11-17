@@ -21,9 +21,9 @@ import {cprLayout} from './cprLayout';
 export class CprScene {
   private window:any;private renderers:any[];private objects:any[]=[];private layers:{mapper:any;actor:any;tf:any;alpha:any}[][]=[];
   private poly:any;private observer:ResizeObserver;private volume?:Volume;private feature?:FeatureVolume;private current?:Controls;private distances:number[][]=[[],[]];private sizes:number[][]=[];
-  private points:Vec3[]=[];private disposed=false;private centers:Vec3[]=[];private curvedSection:Vec3[]=[];private markerLength=96;
+  private points:Vec3[]=[];private disposed=false;private active=true;private centers:Vec3[]=[];private curvedSection:Vec3[]=[];private markerLength=96;
   constructor(private host:HTMLElement,private data:Case,private marker:(positions:CprMarker[])=>void){
-    this.window=vtkGenericRenderWindow.newInstance({background:[0,0,0]});this.window.setContainer(host);
+    this.window=vtkGenericRenderWindow.newInstance({background:[0,0,0],listenWindowResize:false});this.window.setContainer(host);
     this.window.getInteractor().unbindEvents(host);
     this.renderers=[this.window.getRenderer(),this.track(vtkRenderer.newInstance({background:[0,0,0]}))];
     this.window.getRenderWindow().addRenderer(this.renderers[1]);
@@ -41,7 +41,12 @@ export class CprScene {
       });
       [0,3,1,2].forEach(index=>renderer.addViewProp(this.layers[view][index].actor));
     });
-    this.observer=new ResizeObserver(()=>{if(!this.disposed){this.window.resize();if(this.current)this.update(this.current);}});this.observer.observe(host);
+    this.observer=new ResizeObserver(()=>{if(!this.disposed&&this.active){this.window.resize();if(this.current)this.update(this.current);}});this.observer.observe(host);
+  }
+  setActive(active:boolean){
+    if(this.disposed||this.active===active)return;
+    this.active=active;this.window.getInteractor().setEnableRender(active);
+    if(active){this.window.resize();if(this.current)this.update(this.current);}
   }
   private track<T>(object:T):T {this.objects.push(object);return object;}
   private bindImages(){this.layers.forEach(layers=>layers.forEach((l,index)=>{
@@ -52,7 +57,7 @@ export class CprScene {
   setVolume(volume?:Volume){this.volume=volume;this.bindImages();}
   setFeature(feature?:FeatureVolume){this.feature=feature;this.bindImages();}
   update(c:Controls){
-    this.current=c;if(!this.volume||this.disposed)return;this.bindImages();
+    this.current=c;if(!this.volume||this.disposed||!this.active)return;this.bindImages();
     const f=this.data.vessels[c.vessel],points=f.points;this.points=points;
     // vtkImageCPRMapper 37 maps model indices to texture coordinates as ijk/dim.
     // Texture centres lie at (ijk+0.5)/dim. Compensate only at the GPU boundary;

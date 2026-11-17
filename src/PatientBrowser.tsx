@@ -5,16 +5,18 @@ type SortKey='patientId'|'age'|'cadRads'|'priRisk'|'adjustedRisk'|'stratum';
 const columns:[SortKey,string][]=[['patientId','Patient'],['age','Age / sex'],['cadRads','CAD-RADS'],['priRisk','PRI-only'],['adjustedRisk','Adjusted'],['stratum','Risk category']];
 const percent=(n:number|null)=>n==null?'—':`${(n*100).toFixed(1)}%`;
 let rememberedScroll=0;
-export function PatientBrowser({url,onNavigate,onQuery}:{url:string;onNavigate:(url:string)=>void;onQuery:(url:string)=>void}){
-  const [rows,setRows]=useState<PatientSummary[]>(),[error,setError]=useState(''),[revision,setRevision]=useState(0);
+let rememberedRows:PatientSummary[]|undefined;
+export function PatientBrowser({url,onNavigate,onQuery,readyPatients=[]}:{url:string;onNavigate:(url:string)=>void;onQuery:(url:string)=>void;readyPatients?:string[]}){
+  const [rows,setRows]=useState<PatientSummary[]|undefined>(rememberedRows),[error,setError]=useState(''),[revision,setRevision]=useState(0);
   const scroll=useRef<HTMLDivElement>(null),search=useRef<HTMLInputElement>(null);
   const query=new URL(url,location.origin).searchParams,q=query.get('q')??'',stratum=query.get('stratum')??'';
   const sort=(columns.some(([key])=>key===query.get('sort'))?query.get('sort'):'patientId') as SortKey,descending=query.get('order')==='desc';
   const setQuery=(key:string,value:string)=>{const params=new URLSearchParams(query);if(value)params.set(key,value);else params.delete(key);onQuery(`${location.pathname}${params.size?'?'+params:''}`);rememberedScroll=0;};
   useEffect(()=>{
+    if(revision===0&&rememberedRows)return;
     const abort=new AbortController();setError('');
     fetch('/api/patients',{signal:abort.signal,cache:'no-store'}).then(async r=>{if(!r.ok)throw new Error((await r.json()).detail??'Patients unavailable.');return r.json();})
-      .then(data=>setRows(data.patients)).catch(e=>{if(e.name!=='AbortError')setError(e.message);});
+      .then(data=>{rememberedRows=data.patients;setRows(data.patients);}).catch(e=>{if(e.name!=='AbortError')setError(e.message);});
     return()=>abort.abort();
   },[revision]);
   useEffect(()=>{if(rows&&scroll.current)scroll.current.scrollTop=rememberedScroll;},[rows]);
@@ -41,7 +43,7 @@ export function PatientBrowser({url,onNavigate,onQuery}:{url:string;onNavigate:(
             <th scope="row">{patient.available?<a href={`/viewer/${patient.patientId}`} onClick={e=>open(e,patient.patientId)} aria-label={`Open patient ${patient.patientId}`}>{patient.patientId}</a>:patient.patientId}</th>
             <td>{patient.age==null&&patient.sex==null?'—':`${patient.age??'—'} · ${patient.sex??'—'}`}</td><td>{patient.cadRads?.replace('Score ','')??'—'}</td>
             <td>{percent(patient.priRisk)}</td><td>{percent(patient.adjustedRisk)}</td><td><span className={`patient-stratum ${patient.stratum?.toLowerCase()??''}`}>{patient.stratum??'—'}</span></td>
-            <td className="patient-open">{patient.available?<a href={`/viewer/${patient.patientId}`} onClick={e=>open(e,patient.patientId)} aria-label={`View patient ${patient.patientId}`}>Open <span aria-hidden="true">→</span></a>:<span title="Images are not prepared or their configuration changed. See dataset setup in README.">Images unavailable</span>}</td>
+            <td className="patient-open">{readyPatients.includes(patient.patientId)&&<small className="patient-ready" title="Loaded in this browser tab; ready to reopen">Ready</small>}{patient.available?<a href={`/viewer/${patient.patientId}`} onClick={e=>open(e,patient.patientId)} aria-label={`View patient ${patient.patientId}`}>Open <span aria-hidden="true">→</span></a>:<span title="Images are not prepared or their configuration changed. See dataset setup in README.">Images unavailable</span>}</td>
           </tr>)}</tbody>
         </table>
         {!visible!.length&&<div className="patient-empty">No matching patients.<button onClick={()=>{onQuery(location.pathname);search.current?.focus();}}>Clear filters</button></div>}

@@ -22,7 +22,7 @@ const color = (hex: string) => [1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255)
 const plus = (p: Vec3,u: Vec3,v: Vec3,a: number,b: number) => p.map((q,i)=>q+a*u[i]+b*v[i]) as Vec3;
 export class Scene {
   // vtk.js object types vary by factory; contain the dynamic API at this rendering boundary.
-  private objects: any[]=[]; private actors: Record<string,any>={}; private disposed=false;private loaded=false;
+  private objects: any[]=[]; private actors: Record<string,any>={}; private disposed=false;private loaded=false;private active=true;
   private meshData:Record<string,{poly:any;raw:Float32Array;smooth:Float32Array;normals:any}>={};private smoothed?:boolean;
   private window: any; private renderer: any; private renderWindow: any; private picker: any;
   private marker: any; private ring: any;private ringActor:any; private plane: any; private planeActor: any; private texture: any; private image: any;
@@ -31,7 +31,7 @@ export class Scene {
   private nativeStack?:AxialVolume;private volumeRenderer?:CpeVolumeRenderer;private volumeAbort=new AbortController();
   private volumePending=false;private volumeFailed=false;private current?:Controls;private currentSamples?:{ct:Float32Array|Int16Array;feature?:FeaturePlane};
   constructor(private container: HTMLElement, private data: Case, private select: (v: Vessel,index: number)=>void,private volumeStatus:(status:CpeVolumeStatus)=>void=()=>{}) {
-    this.window=vtkGenericRenderWindow.newInstance({background:[0.035,0.048,0.068]});
+    this.window=vtkGenericRenderWindow.newInstance({background:[0.035,0.048,0.068],listenWindowResize:false});
     this.window.setContainer(container); this.renderer=this.window.getRenderer(); this.renderWindow=this.window.getRenderWindow();
     this.cube=document.createElementNS('http://www.w3.org/2000/svg','svg');this.cube.setAttribute('viewBox','0 0 68 68');this.cube.setAttribute('role','img');this.cube.setAttribute('aria-label','3D LPS orientation cube');this.cube.classList.add('lps-cube');this.cube.style.visibility='hidden';container.append(this.cube);
     this.cameraSubscription=this.renderer.getActiveCamera().onModified(()=>this.updateCube());
@@ -49,8 +49,14 @@ export class Scene {
       poly.getLines().setData(new Uint32Array([data.vessels[v].points.length,...data.vessels[v].points.map((_,i)=>i)]));
       const actor=this.actor(poly); actor.getProperty().setLineWidth(3); actor.getProperty().setLighting(false); this.actors[`line_${v}`]=actor;
     });
-    this.observer=new ResizeObserver(()=>{if(!this.disposed){this.window.resize();this.renderWindow.render();}}); this.observer.observe(container);
+    this.observer=new ResizeObserver(()=>{if(!this.disposed&&this.active){this.window.resize();this.renderWindow.render();}}); this.observer.observe(container);
     container.addEventListener('pointerdown',this.onDown); container.addEventListener('pointerup',this.onUp);
+  }
+  setActive(active:boolean){
+    if(this.disposed||this.active===active)return;
+    this.active=active;const interactor=this.window.getInteractor();interactor.setEnableRender(active);interactor.setEnabled(active);
+    if(active){interactor.bindEvents(this.container);this.window.resize();if(this.current)this.update(this.current,this.currentSamples);}
+    else interactor.unbindEvents();
   }
   private track<T>(obj:T):T {this.objects.push(obj); return obj;}
   private actor(input:any) {
@@ -98,8 +104,8 @@ export class Scene {
   update(c:Controls,samples?:{ct:Float32Array|Int16Array;feature?:FeaturePlane}) {
     // Do not render default-position markers or partially loaded surfaces before
     // the camera is fitted. ResizeObserver can request a frame during loading.
-    if(this.disposed||!this.loaded)return;
     this.current=c;this.currentSamples=samples;
+    if(this.disposed||!this.loaded||!this.active)return;
     if(c.render3d==='cpe'&&!this.volumeRenderer)void this.prepareVolume();
     this.volumeRenderer?.update(c);
     const volumeMode=c.render3d==='cpe'&&!!this.volumeRenderer,context=volumeMode?c.volumeContext:1;

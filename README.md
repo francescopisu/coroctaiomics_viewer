@@ -278,3 +278,26 @@ Screenshot output is under `test-results/`. The viewer has no Export button. `ca
 Display validation also checks native crop sizes, Gaussian speck suppression with lumen-hole preservation, mesh normals/displacement/volume stability, support-normalized interpolation with missing neighbours, balanced/raw palette semantics, aorta visibility, mesh/edge toggles and independent CPE-mask visibility.
 
 A patient-specific on/off audit at standard and Retina pixel densities confirms that the antialiasing toggle is active but often visually subtle. At device scale 2, case-1718 LAD changes about 0.54% of straightened pixels and RCA about 2.94%, with mean maximum-channel differences of 0.0066 and 0.0351 byte levels respectively (W 800 / L 250, straightened angle 6°, default viewport). These are display comparisons, not clinical noise-reduction measurements. Central-column pixels and the curved/orthogonal views are identical. The control is labelled Pixel antialiasing to distinguish it from background denoising or geometric correction.
+
+## Switching between three demonstration patients
+
+The browser keeps the last **three fully loaded patient viewers** resident,
+including CT/masks, downloaded radiomic maps, CPE volume buffers, vtk.js objects
+and GPU textures. Returning to the patient list pauses that viewer rather than
+unmounting it. The list reuses its last response; **Refresh** fetches an updated
+catalogue. A green **Ready** label identifies a loaded case.
+
+Before the demonstration, open each of the three cases once, let its loading
+bar finish, then return to Patients. Subsequent visits in the **same browser
+tab** reuse the complete session without imaging downloads or rebuilding the
+CPE volume. Vessel selection, rotations, slice position, maps and optical
+settings are preserved. Hidden renderers do not redraw on window resize or
+receive input; returning resizes/redraws only the active viewer.
+
+Opening a fourth patient releases the least recently visited viewer. Leaving
+an unfinished case cancels its initial load instead of retaining partial data.
+Reloading/closing the tab clears the resident sessions; after a reload they
+must be opened once again. Reload the tab after changing case configuration or
+prepared image data to avoid retaining an older in-memory version. Retaining
+three full-resolution sessions uses substantially more RAM/GPU memory than
+one, so warm the actual three cases on the demonstration PC before the session.

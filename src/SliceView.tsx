@@ -5,7 +5,7 @@ import {contours,contourPath} from './contours';
 import {planeBasis,directionLabel,drawCube} from './orientation';
 import {lumenReference} from './diameter';
 import {clampSlice,nearestCentreline} from './sliceNavigation';
-export function SliceView({kind,plane,data,c,onSelect,onNavigate}:{kind:'cross'|'axial';plane?:Plane;data:Case;c:Controls;onSelect:(i:number)=>void;onNavigate:(i:number)=>void}){
+export function SliceView({kind,plane,data,c,onSelect,onNavigate,active=true}:{kind:'cross'|'axial';plane?:Plane;data:Case;c:Controls;onSelect:(i:number)=>void;onNavigate:(i:number)=>void;active?:boolean}){
   const ref=useRef<HTMLCanvasElement>(null),host=useRef<HTMLDivElement>(null),latest=useRef({c,onNavigate}),drag=useRef<{y:number;index:number;moved:boolean;pointer:number}|undefined>(undefined);
   latest.current={c,onNavigate};const [size,setSize]=useState(0);
   const count=kind==='cross'?data.vessels[c.vessel].points.length:data.geometry.shape[2],current=kind==='cross'?c.index:axialIndex(data,c);
@@ -22,7 +22,7 @@ export function SliceView({kind,plane,data,c,onSelect,onNavigate}:{kind:'cross'|
     return lumen&&cpe?{lumen:contours(lumen,plane.width,plane.height),cpe:contours(cpe,plane.width,plane.height)}:undefined;
   },[plane]);
   useEffect(()=>{
-    const canvas=ref.current;if(!canvas)return;const ctx=canvas.getContext('2d')!;
+    const canvas=ref.current;if(!canvas||!active)return;const ctx=canvas.getContext('2d')!;
     canvas.width=plane?.width??50;canvas.height=plane?.height??50;if(!plane)return;
     const temp=document.createElement('canvas');temp.width=plane.width;temp.height=plane.height;
     const display=loops?new Uint8ClampedArray(rgba(plane.ct,0,plane.ct.length,c)):pixels(plane,c);
@@ -61,7 +61,7 @@ export function SliceView({kind,plane,data,c,onSelect,onNavigate}:{kind:'cross'|
     ctx.fillText(directionLabel(basis.up),canvas.width/2,8*pixel);ctx.fillText(directionLabel(basis.up.map(v=>-v) as Vec3),canvas.width/2,canvas.height-21*pixel);
     ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillText(directionLabel(basis.right.map(v=>-v) as Vec3),8*pixel,canvas.height/2);ctx.textAlign='right';ctx.fillText(directionLabel(basis.right),canvas.width-8*pixel,canvas.height/2);
     drawCube(ctx,basis,8*pixel,canvas.height-64*pixel,56*pixel);
-  },[plane,c,data,kind,loops,size]);
+  },[plane,c,data,kind,loops,size,active]);
   return <div ref={host} className={`slice-image ${kind}`} tabIndex={0} role="group" aria-label={kind==='cross'?'Orthogonal slice navigation':'Axial slice navigation'}
     title={kind==='cross'?'Scroll or drag vertically to move along the vessel. Lumen Øeq = diameter of a circle with the same unsmoothed lumen area.':'Scroll or drag vertically through native CT slices. Click to select the nearest vessel point.'}
     onKeyDown={e=>{let next:number|undefined;if(e.key==='ArrowDown')next=current+1;else if(e.key==='ArrowUp')next=current-1;else if(e.key==='PageDown')next=current+10;else if(e.key==='PageUp')next=current-10;else if(e.key==='Home')next=0;else if(e.key==='End')next=count-1;if(next!==undefined){e.preventDefault();onNavigate(clampSlice(next,count));}}}
