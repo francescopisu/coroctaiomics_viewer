@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {Scene} from './scene';
+import {Scene,type CpeVolumeStatus} from './scene';
 import {CprScene} from './cprScene';
 import {SliceView} from './SliceView';
 import {loadVolume,SharedCt,type Volume} from './volume';
@@ -14,18 +14,25 @@ import {loadAxialVolume,type AxialVolume} from './axialVolume';
 import {ResourceCache} from './resourceCache';
 import {AiPanel} from './AiPanel';
 import type {AiFeature} from './aiTypes';
+import {restoreView,saveView} from './viewState';
+import {attenuationBands} from './cpeVolumeData';
 
-const initial:Controls={vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:true,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:true,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
-export default function App(){
-  const [data,setData]=useState<Case>(),[c,setC]=useState(initial),[error,setError]=useState(''),[ready,setReady]=useState(false);
+const initial:Controls={render3d:'cpe',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.15,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:true,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:true,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
+export default function App({patientId,onBack}:{patientId:string;onBack:()=>void}){
+  const [data,setData]=useState<Case>(),[c,setC]=useState(()=>restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
+  const latestControls=useRef(c);latestControls.current=c;
+  useEffect(()=>()=>saveView(patientId,latestControls.current),[patientId]);
+  useEffect(()=>{const timer=window.setTimeout(()=>saveView(patientId,c),250);return()=>clearTimeout(timer);},[patientId,c]);
   const [bootPercent,setBootPercent]=useState(0),[bootDone,setBootDone]=useState(false),[downloads]=useState(()=>new InitialProgress(setBootPercent));
   const [loaded,setLoaded]=useState<{data:Case;volumes:Record<Vessel,Volume>}>(),[nativeAxial,setNativeAxial]=useState<AxialVolume>();
   const [featureCache,setFeatureCache]=useState<{data:Case;cache:ResourceCache<FeatureVolume>}>(),[,refreshFeatures]=useState(0);
-  const [markers,setMarkers]=useState<CprMarker[]>([]),[exporting,setExporting]=useState(false);
+  const [markers,setMarkers]=useState<CprMarker[]>([]);
   const [aiOpen,setAiOpen]=useState(false),aiButton=useRef<HTMLButtonElement>(null);
+  const [volumeStatus,setVolumeStatus]=useState<CpeVolumeStatus>({phase:'idle'});
+  // Keep optical 3D controls from repainting the four independent image views.
+  const imagingControls=useMemo(()=>c,[c.vessel,c.index,c.axialSlice,c.curvedAngle,c.straightAngle,c.featureIds,c.featureOpacity,c.featureScale,c.cpeVisible,c.cprAntialias,c.smoothEdges,c.lumen,c.lumenOpacity,c.cpe,c.cpeOpacity,c.colors,c.width,c.level,c.raw]);
   const closeAi=()=>{setAiOpen(false);aiButton.current?.focus();};
   const sceneHost=useRef<HTMLDivElement>(null),cprHost=useRef<HTMLDivElement>(null),scene=useRef<Scene|undefined>(undefined),recon=useRef<CprScene|undefined>(undefined);
-  const crossCanvas=useRef<HTMLCanvasElement|null>(null),axialCanvas=useRef<HTMLCanvasElement|null>(null);
   const drag=useRef<{x:number;y:number;angle:number;view:number;mode?:'rotate'|'navigate'}|undefined>(undefined);
   const update=<K extends keyof Controls>(key:K,value:Controls[K])=>setC(old=>({...old,[key]:value,...(key==='index'?{axialSlice:undefined}:{})}));
   const select=(vessel:Vessel,index=0)=>setC(old=>({...old,vessel,index,axialSlice:undefined,curvedAngle:vessel===old.vessel?old.curvedAngle:0,straightAngle:vessel===old.vessel?old.straightAngle:0}));
@@ -38,10 +45,10 @@ export default function App(){
   const slice=data?axialIndex(data,c):0;
   const baseAxial=useMemo(()=>nativeAxial?.slice(slice,c.vessel),[nativeAxial,slice,c.vessel]);
   const axialPlane=useMemo(()=>baseAxial&&feature&&data?{...baseAxial,feature:feature.axialPlane(slice,data.geometry.shape,c.smoothEdges)}:baseAxial,[baseAxial,feature,data,slice,c.smoothEdges]);
-  useEffect(()=>{const abort=new AbortController();fetch('/api/case',{signal:abort.signal,cache:'no-store'}).then(async r=>{if(!r.ok)throw new Error((await r.json()).detail);const d=await r.json();if(!d.volumes||!d.axialVolume)throw new Error('Run backend.prepare to prepare native viewer volumes');return d as Case;}).then(d=>{downloads.plan(d);setData(d);}).catch(e=>{if(e.name!=='AbortError')setError(e.message);});return()=>abort.abort();},[downloads]);
+  useEffect(()=>{const abort=new AbortController();fetch(`/api/cases/${encodeURIComponent(patientId)}`,{signal:abort.signal,cache:'no-store'}).then(async r=>{if(!r.ok)throw new Error((await r.json()).detail);const d=await r.json();if(d.patientId!==patientId)throw new Error('Case response does not match the selected patient');if(!d.volumes||!d.axialVolume)throw new Error('Run backend.prepare to prepare native viewer volumes');return d as Case;}).then(d=>{if(abort.signal.aborted)return;downloads.plan(d);setC(old=>({...old,index:Math.min(old.index,d.vessels[old.vessel].points.length-1),axialSlice:old.axialSlice===undefined?undefined:Math.min(old.axialSlice,d.geometry.shape[2]-1)}));setData(d);}).catch(e=>{if(e.name!=='AbortError')setError(e.message);});return()=>abort.abort();},[downloads,patientId]);
   useEffect(()=>{
     if(!data||!sceneHost.current||!cprHost.current)return;const abort=new AbortController();
-    const s=new Scene(sceneHost.current,data,select),r=new CprScene(cprHost.current,data,setMarkers);scene.current=s;recon.current=r;
+    const s=new Scene(sceneHost.current,data,select,setVolumeStatus),r=new CprScene(cprHost.current,data,setMarkers);scene.current=s;recon.current=r;
     s.load(abort.signal,downloads).then(()=>{if(!abort.signal.aborted)setReady(true);}).catch(e=>{if(e.name!=='AbortError')setError(e.message);});
     return()=>{abort.abort();scene.current=undefined;recon.current=undefined;r.dispose();s.dispose();};
   },[data]);
@@ -66,9 +73,10 @@ export default function App(){
     featureCache.cache.load(featureInfo.id,signal=>loadFeature(featureInfo,signal)).then(()=>{if(active)refreshFeatures(n=>n+1);}).catch(e=>{if(active&&e.name!=='AbortError')setError(e.message);});
     return()=>{active=false;};
   },[data,featureInfo,featureCache]);
-  useEffect(()=>{recon.current?.setVolume(volume);recon.current?.setFeature(feature);if(volume)recon.current?.update(c);},[feature,volume,c]);
+  useEffect(()=>{recon.current?.setVolume(volume);recon.current?.setFeature(feature);if(volume)recon.current?.update(imagingControls);},[feature,volume,imagingControls]);
   useEffect(()=>{scene.current?.update(c,plane);},[c,plane,ready]);
-  const startupComplete=ready&&!!volume&&!!axialPlane&&!error;
+  useEffect(()=>{scene.current?.setNativeStack(nativeAxial);},[nativeAxial,ready]);
+  const startupComplete=ready&&!!volume&&!!axialPlane&&(volumeStatus.phase==='ready'||volumeStatus.phase==='error')&&!error;
   useEffect(()=>{
     if(bootDone||!startupComplete)return;let second=0,timer=0;
     const first=requestAnimationFrame(()=>{second=requestAnimationFrame(()=>{
@@ -76,21 +84,6 @@ export default function App(){
     });});
     return()=>{cancelAnimationFrame(first);cancelAnimationFrame(second);clearTimeout(timer);};
   },[startupComplete,bootDone,downloads]);
-  const exportView=async()=>{
-    if(!scene.current||!recon.current||!data||!axialPlane||!plane)return;setExporting(true);
-    try{const leftPromise=scene.current.capture();scene.current.update(c,plane);const [left,middle]=await Promise.all([leftPromise,recon.current.capture()]);
-      const images=await Promise.all([left,middle].map(async url=>{const img=new Image();img.src=url;await img.decode();return img;}));
-      const out=document.createElement('canvas');out.width=1600;out.height=960;const ctx=out.getContext('2d')!;ctx.fillStyle='#000';ctx.fillRect(0,0,1600,960);
-      const fit=(image:CanvasImageSource,w:number,h:number,x:number,y:number,bw:number,bh:number)=>{const s=Math.min(bw/w,bh/h),r={x:x+(bw-w*s)/2,y:y+(bh-h*s)/2,w:w*s,h:h*s};ctx.drawImage(image,r.x,r.y,r.w,r.h);return r;};
-      fit(images[0],images[0].width,images[0].height,0,35,630,925);const middleRect=fit(images[1],images[1].width,images[1].height,635,35,580,925);
-      ctx.strokeStyle='#e7c84f';ctx.lineWidth=1;
-      markers.forEach(({center:[x,y],line},view)=>{const left=middleRect.x+view*middleRect.w/2;ctx.beginPath();line.forEach(([px,py],i)=>{const q=[left+px/100*middleRect.w/2,middleRect.y+py/100*middleRect.h];if(i)ctx.lineTo(q[0],q[1]);else ctx.moveTo(q[0],q[1]);});ctx.stroke();ctx.beginPath();ctx.arc(left+x/100*middleRect.w/2,middleRect.y+y/100*middleRect.h,3,0,2*Math.PI);ctx.stroke();});
-      if(crossCanvas.current)fit(crossCanvas.current,crossCanvas.current.width,crossCanvas.current.height,1220,35,380,450);
-      if(axialCanvas.current)fit(axialCanvas.current,axialCanvas.current.width,axialCanvas.current.height,1220,505,380,450);
-      ctx.fillStyle='#c5cbd0';ctx.font='15px system-ui';ctx.fillText(`${c.vessel}  ${data.vessels[c.vessel].distances[c.index].toFixed(1)} mm  Straight ${Math.round(c.straightAngle)}°${c.cprAntialias?' AA':''}  Curved ${Math.round(c.curvedAngle)}°   W ${c.width}  L ${c.level}${featureInfo&&scale?`   ${featureInfo.name}  ${c.featureScale} [${scale.map(featureNumber).join(', ')}]`:''}`,16,24);
-      const a=document.createElement('a');a.download=`coronary-case-${data.patientId}-${c.vessel}.png`;a.href=out.toDataURL();a.click();
-    }catch(e){setError(`Export: ${e instanceof Error?e.message:String(e)}`);}finally{setExporting(false);}
-  };
   const line=data?.vessels[c.vessel];
   const selectAiFeature=(feature:AiFeature)=>{
     const map=data?.featureMaps[feature.vessel].find(f=>f.name.toLowerCase()===feature.mapName.toLowerCase());
@@ -99,8 +92,9 @@ export default function App(){
       straightAngle:old.vessel===feature.vessel?old.straightAngle:0,curvedAngle:old.vessel===feature.vessel?old.curvedAngle:0,
       featureIds:{...old.featureIds,[feature.vessel]:map.id}}));
   };
-  return <><main inert={!bootDone&&!error} aria-busy={!bootDone&&!error}>
+  return <><main inert={!bootDone&&!error} aria-busy={(!bootDone&&!error)||!!featureInfo&&!feature}>
     <header className="toolbar" aria-label="Viewer controls">
+      {(bootDone||error)&&<button className="patients-back" onClick={onBack}>← Patients</button>}<span className="viewer-patient" title={`Patient ${patientId}`}>{patientId}</span>
       <select aria-label="Vessel" value={c.vessel} onChange={e=>select(e.target.value as Vessel)}>{vessels.map(v=><option key={v}>{v}</option>)}</select>
       <select className="feature-select" aria-label="Radiomic feature map" disabled={!availableFeatures.length} value={featureId} onChange={e=>update('featureIds',{...c.featureIds,[c.vessel]:e.target.value})}>
         <option value="">{availableFeatures.length?'No feature map':'No feature maps'}</option>{availableFeatures.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
@@ -109,7 +103,13 @@ export default function App(){
       {featureInfo&&scale&&<div className="feature-scale" aria-label="Feature color scale" title={`${featureInfo.name}: ${c.featureScale==='balanced'?'2nd percentile / median / 98th percentile':'raw, zero-centered'}`}><i style={{background:FEATURE_GRADIENT}}/><div>{scale.map((value,i)=><span key={i}>{featureNumber(value)}</span>)}</div></div>}
       {featureInfo&&!feature&&<span className="map-loading">Loading map…</span>}
       <button className="mask-toggle" aria-label="CPE masks" aria-pressed={c.cpeVisible} onClick={()=>update('cpeVisible',!c.cpeVisible)}>CPE masks</button>
-      <details className="layers"><summary>Layers</summary><div className="layer-menu">
+      <button ref={aiButton} className="ai-toggle" aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!data}>AI</button>
+      <button onClick={()=>{scene.current?.reset();setC(old=>({...old,curvedAngle:0,straightAngle:0}));}} disabled={!ready}>Reset</button>
+      <details className="layers"><summary aria-label="Layers" title="Layers"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M9.5 2h5l.5 3 1.7 1 2.9-1 2.5 4.3-2.3 2v2l2.3 2-2.5 4.3-2.9-1-1.7 1-.5 3h-5l-.5-3-1.7-1-2.9 1-2.5-4.3 2.3-2v-2l-2.3-2L4.4 5l2.9 1L9 5Z"/><circle cx="12" cy="12.3" r="3.2"/></svg></summary><div className="layer-menu">
+        <div className="layer-window">
+      <label className="window">W<input aria-label="Window width" type="number" min="1" max="3000" value={c.width} onChange={e=>update('width',Math.max(1,+e.target.value))}/></label>
+      <label className="window">L<input aria-label="Window level" type="number" value={c.level} onChange={e=>update('level',+e.target.value)}/></label>
+        </div>
         <label><input type="checkbox" checked={c.smoothMeshes} onChange={e=>update('smoothMeshes',e.target.checked)}/>Smooth meshes</label>
         <label title="Straightened CT only. Filters undersampled pixels; the effect can be very subtle at high display resolution. Does not remove geometric background warping."><input type="checkbox" checked={c.cprAntialias} onChange={e=>update('cprAntialias',e.target.checked)}/>Pixel antialiasing</label>
         <label><input type="checkbox" checked={c.smoothEdges} onChange={e=>update('smoothEdges',e.target.checked)}/>Smooth edges</label>
@@ -124,15 +124,22 @@ export default function App(){
         <label><input type="checkbox" checked={c.raw} onChange={e=>update('raw',e.target.checked)}/>CCTA</label>
         <label><input type="checkbox" checked={c.context} onChange={e=>update('context',e.target.checked)}/>3D plane</label>
       </div></details>
-      <button ref={aiButton} className="ai-toggle" aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!data}>AI</button>
-      <label className="window">W<input aria-label="Window width" type="number" min="1" max="3000" value={c.width} onChange={e=>update('width',Math.max(1,+e.target.value))}/></label>
-      <label className="window">L<input aria-label="Window level" type="number" value={c.level} onChange={e=>update('level',+e.target.value)}/></label>
-      <button onClick={()=>{scene.current?.reset();setC(old=>({...old,curvedAngle:0,straightAngle:0}));}} disabled={!ready}>Reset</button>
-      <button onClick={exportView} disabled={!bootDone||!volume||!ready||!axialPlane||!!featureInfo&&!feature||exporting}>{exporting?'…':'Export'}</button>
     </header>
     {error&&<div className="error" role="alert">{error}<button onClick={()=>location.reload()}>Reload</button></div>}
     <div className="workspace">
-      <section className="panel overview" aria-label="3D coronary view"><h2>3D</h2><div className="scene" ref={sceneHost}/>{!ready&&<span className="loading">Loading…</span>}</section>
+      <section className="panel overview" aria-label="3D coronary view"><h2>3D</h2>
+        <div className="render3d-controls">
+          <details className="volume-settings"><summary aria-label="CPE volume settings">Settings</summary><div className="volume-menu">
+            <label>Density<input aria-label="CPE volume density" type="range" min="0" max="2" step=".05" value={c.volumeDensity} onChange={e=>update('volumeDensity',+e.target.value)}/></label>
+            {attenuationBands.map(band=><label key={band.id} title={band.range}>{band.label}<input aria-label={`${band.label} opacity`} type="range" min="0" max="2" step=".05" value={c.volumeBands[band.id]} onChange={e=>update('volumeBands',{...c.volumeBands,[band.id]:+e.target.value})}/></label>)}
+            <label>Context<input aria-label="CPE anatomical context opacity" type="range" min="0" max="1" step=".05" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
+          </div></details>
+        </div>
+        <div className="scene" ref={sceneHost}/>{!ready&&<span className="loading">Loading…</span>}
+        {c.render3d==='cpe'&&volumeStatus.phase==='preparing'&&<span className="volume-status" role="status">Preparing CPE volume…</span>}
+        {c.render3d==='cpe'&&volumeStatus.phase==='error'&&<div className="volume-status" role="alert">{volumeStatus.message}<button onClick={()=>scene.current?.retryVolume()}>Retry</button></div>}
+        {c.render3d==='cpe'&&volumeStatus.phase==='ready'&&<div className="volume-legend" aria-label="CPE CT attenuation bands" title="Display bands in native HU, not validated plaque or histological classifications. Colors apply only to saved CPE voxels; they are independent of the radiomic-map palette.">{attenuationBands.map(band=><span key={band.id} title={band.range}><i style={{background:band.color}}/>{band.label}</span>)}</div>}
+      </section>
       <section className="recon" aria-label="Coronary reconstructions"><div className="cpr-render" ref={cprHost}/>{[0,1].map(view=><div key={view} className={`cpr-hit ${view===0?'straight':'curved'}`} aria-label={view===0?'Straightened reconstruction':'Curved CPR'}
         onPointerDown={e=>{if(!volume||e.button!==0)return;e.currentTarget.setPointerCapture(e.pointerId);drag.current={x:e.clientX,y:e.clientY,angle:view===0?c.straightAngle:c.curvedAngle,view};}}
         onPointerMove={e=>{const d=drag.current;if(!d||!e.buttons)return;const dx=e.clientX-d.x,dy=e.clientY-d.y;
@@ -146,15 +153,16 @@ export default function App(){
           {!volume&&<span className="loading">Loading…</span>}
         </div>)}</section>
       <div className="right-views">
-        <section className="panel"><h2>Cross-section</h2>{data&&<SliceView kind="cross" onNavigate={i=>update('index',i)} plane={plane} data={data} c={c} onSelect={i=>update('index',i)} register={el=>{crossCanvas.current=el;}}/>}</section>
-        <section className="panel"><h2>Axial</h2>{data&&<SliceView kind="axial" onNavigate={i=>setC(old=>navigateAxial(data,old,i))} plane={axialPlane} data={data} c={c} onSelect={i=>update('index',i)} register={el=>{axialCanvas.current=el;}}/>}</section>
+        <section className="panel"><h2>Cross-section</h2>{data&&<SliceView kind="cross" onNavigate={i=>update('index',i)} plane={plane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
+        <section className="panel"><h2>Axial</h2>{data&&<SliceView kind="axial" onNavigate={i=>setC(old=>navigateAxial(data,old,i))} plane={axialPlane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
       </div>
-      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature}/>}
+      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
     </div>
   </main>
     {!bootDone&&!error&&<div className={`initial-loader${bootPercent===100?' complete':''}`}>
+      <button className="loader-back" onClick={onBack}>← Patients</button>
       <div className="initial-progress" role="progressbar" aria-label="Loading viewer" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bootPercent}>
-        <div className="initial-progress-label"><span>Loading…</span><span>{bootPercent}%</span></div>
+        <div className="initial-progress-patient">Patient {patientId}</div><div className="initial-progress-label"><span>Loading…</span><span>{bootPercent}%</span></div>
         <div className="initial-progress-track"><div style={{width:`${bootPercent}%`}}/></div>
       </div>
     </div>}

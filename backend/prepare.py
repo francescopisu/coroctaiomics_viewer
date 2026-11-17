@@ -4,7 +4,7 @@ import json
 import os
 import numpy as np
 from skimage.measure import marching_cubes
-from .data import ROOT, configuration, configuration_key, image, centerline, resample_frames, sample, CASE_INTERPRETATION
+from .data import ROOT, configuration, configuration_key, image, centerline, resample_frames, sample, CASE_INTERPRETATION, read_case_config
 from .inspect_case import inspect
 from .volumes import prepare_volumes,prepare_axial_volume
 from .features import prepare_features
@@ -35,10 +35,11 @@ def mesh(mask, affine, directory, name):
             'smoothing':{'method':'windowed-sinc','iterations':MESH_ITERATIONS,'passBand':MESH_PASS_BAND,'maximumDisplacementMm':float(np.linalg.norm(smoothed-points,axis=1).max())},
             "vertices": len(points), "triangles": len(faces)}
 
-def prepare(force=False):
-    configured_key=configuration_key()
-    conf, paths = configuration()
-    if configuration_key()!=configured_key:
+def prepare(force=False,case_id=None):
+    raw=read_case_config(case_id)
+    configured_key=configuration_key(raw)
+    conf, paths = configuration(raw)
+    if configuration_key(read_case_config(case_id))!=configured_key:
         raise RuntimeError('Case configuration changed while reading it. Run preparation again.')
     sig = signature(conf, paths)
     directory = ROOT / 'cache' / conf['patientId']
@@ -52,7 +53,7 @@ def prepare(force=False):
                 old['axialVolume']=prepare_axial_volume(directory,old['volumes']['LAD']['scalarType'],old['assets'],f'/api/cases/{conf["patientId"]}/assets/')
                 temp=directory/'manifest.tmp';temp.write_text(json.dumps(old));os.replace(temp,manifest_path)
             print('Verified source fingerprint; cache is current.'); return
-    report = inspect()
+    report = inspect(raw)
     print('Source geometry and centerline alignment passed.', flush=True)
     n = int(conf['sampling']['widthPixels']); resolution = float(conf['sampling']['resolutionMm'])
     # Pixel centres: even-sized 50-pixel plane has its centre between the central pixels.
@@ -102,7 +103,7 @@ def prepare(force=False):
     for s in surfaces.values():
         s['points'], s['cells'] = prefix+s['points'], prefix+s['cells']
         s['smoothPoints'],s['normals']=prefix+s['smoothPoints'],prefix+s['normals']
-    if configuration_key()!=configured_key or signature(conf,paths)!=sig:
+    if configuration_key(read_case_config(case_id))!=configured_key or signature(conf,paths)!=sig:
         raise RuntimeError('Case configuration or source files changed during preparation. Run preparation again.')
     manifest = {"patientId": conf['patientId'], "signature": sig, "configurationKey":configured_key, "coordinateSystem": "LPS", "units": "mm",
         "sampling": conf['sampling'], "cpe": {"output": conf['directories']['cpe'], "nominalLengthMm": conf['cpeLengthMm'], "radialFactor": 4},
@@ -117,5 +118,5 @@ def prepare(force=False):
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(); parser.add_argument('--force', action='store_true')
-    prepare(parser.parse_args().force)
+    parser = argparse.ArgumentParser(); parser.add_argument('--force', action='store_true');parser.add_argument('--case',dest='case_id')
+    args=parser.parse_args();prepare(args.force,args.case_id)

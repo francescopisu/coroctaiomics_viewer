@@ -4,10 +4,10 @@ import numpy as np
 from scipy.spatial import cKDTree
 from vtkmodules.vtkIOXML import vtkXMLPolyDataReader
 from vtkmodules.util.numpy_support import vtk_to_numpy
-from .data import ROOT, configuration, image, centerline, sample
+from .data import ROOT, configuration, image, centerline, sample, read_case_config
 
-def inspect():
-    conf, paths = configuration()
+def inspect(case_config=None):
+    conf, paths = configuration(case_config)
     report = {"patientId": conf["patientId"], "directories": conf["directories"],
               "sampling": conf["sampling"], "images": {}, "centerlines": {}, "polydata": {}}
     ct, ct_affine = image(paths["ct"])
@@ -61,11 +61,18 @@ def inspect():
                 "pointData": attrs(poly.GetPointData()), "cellData": attrs(poly.GetCellData()), "fieldData": attrs(poly.GetFieldData()),
                 "nativeLPSDistanceMedianMm": float(np.median(lps)), "ifRASDistanceMedianMm": float(np.median(ras)),
                 "coordinateEvidence": "Native points align as LPS; no coordinate-system field metadata. Not used for display."}
-    ROOT.joinpath("cache").mkdir(exist_ok=True)
-    ROOT.joinpath("cache/inspection.json").write_text(json.dumps(report, indent=2))
+    directory=ROOT/'cache'/conf['patientId'];directory.mkdir(parents=True,exist_ok=True)
+    encoded=json.dumps(report,indent=2)
+    (directory/'inspection.json').write_text(encoded)
+    # Preserve the default-case report for existing diagnostics. Preparing another
+    # catalogue patient must not replace a report identified as the default case.
+    if conf['patientId']==read_case_config()['patientId']:
+        ROOT.joinpath('cache/inspection.json').write_text(encoded)
     return report
 
 if __name__ == "__main__":
-    r = inspect()
+    import argparse
+    parser=argparse.ArgumentParser();parser.add_argument('--case',dest='case_id');args=parser.parse_args()
+    r = inspect(read_case_config(args.case_id))
     print(json.dumps({"centerlines": r["centerlines"], "polydata": r["polydata"],
         "CPE": {k: {x: v[x] for x in ["voxels", "lumenOverlapVoxels"]} for k, v in r["images"].items() if k.startswith("cpe")}}, indent=2))

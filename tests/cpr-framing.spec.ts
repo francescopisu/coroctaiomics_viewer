@@ -22,7 +22,7 @@ test('RCA framing and marker lengths across rotation',async({page,request})=>{
   const data=await (await request.get('/api/case')).json(),f=data.vessels.RCA,points=f.points as Vec3[];
   const dot=(a:number[],b:number[])=>a.reduce((s,x,i)=>s+x*b[i],0),sub=(a:number[],b:number[])=>a.map((x,i)=>x-b[i]),norm=(a:number[])=>a.map(x=>x/Math.hypot(...a)),cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
   const axis=norm(sub(points.at(-1)!,points[0])),u=norm(sub(f.u[0],axis.map(x=>x*dot(f.u[0],axis)))),v=cross(axis,u),center=points[0].map((_,i)=>points.reduce((s,p)=>s+p[i],0)/points.length),width=25+2*Math.max(...points.map(p=>Math.hypot(...cross(sub(p,center),axis))));
-  test.setTimeout(180000);await page.goto('/');await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:90000});
+  test.setTimeout(180000);await page.goto('/viewer/1718');await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:90000});
   await page.getByLabel('Vessel',{exact:true}).selectOption('RCA');
   const navigation=page.getByRole('group',{name:'Orthogonal slice navigation'});await navigation.press('Home');for(let i=0;i<20;i++)await navigation.press('ArrowDown');
   const curved=page.getByLabel('Curved CPR',{exact:true});let previous=0,scale:string|undefined;

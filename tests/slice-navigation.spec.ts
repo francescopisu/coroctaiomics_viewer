@@ -3,7 +3,7 @@ import {test,expect} from '@playwright/test';
 test('right-hand slices support wheel, vertical drag, crosshair, diameter and camera-linked cube',async({page,request})=>{
   test.setTimeout(180000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
   const manifest=await (await request.get('/api/case')).json();
-  await page.goto('/');await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:90000});
+  await page.goto('/viewer/1718');await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:90000});
   await expect(page.getByRole('slider',{name:'Longitudinal position'})).toHaveCount(0);
   const cross=page.locator('.cross canvas'),axial=page.locator('.axial canvas'),crossNav=page.getByRole('group',{name:'Orthogonal slice navigation'}),axialNav=page.getByRole('group',{name:'Axial slice navigation'});
   const attr=async(el:typeof cross,key:string)=>Number(await el.getAttribute(key));
@@ -27,6 +27,5 @@ test('right-hand slices support wheel, vertical drag, crosshair, diameter and ca
   const crossBefore=await cross.evaluate((el:HTMLCanvasElement)=>el.toDataURL()),curved=page.getByLabel('Curved CPR',{exact:true}),b=(await curved.boundingBox())!;
   await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2+60,b.y+b.height/2,{steps:4});await page.mouse.up();expect(await cross.evaluate((el:HTMLCanvasElement)=>el.toDataURL())).toBe(crossBefore);
   await page.screenshot({path:'test-results/slice-navigation.png'});
-  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Export',exact:true}).click();await (await download).saveAs('test-results/slice-navigation-export.png');
   expect(errors).toEqual([]);await expect(page.getByRole('alert')).toHaveCount(0);
 });

@@ -25,6 +25,24 @@ def numeric(value):
         return None
 
 
+def load_pri_reference(path, thresholds, n):
+    """Read only original OOF scores; never substitute final-model training risks."""
+    with open(path) as file:
+        reference = json.load(file)
+    if (reference.get('model') != 'PRI-only' or
+            reference.get('threshold_source') != thresholds['threshold_source'] or
+            reference.get('prediction_horizon_months') != thresholds['prediction_horizon_months']):
+        raise ValueError('PRI reference model, source or prediction horizon disagrees with the study thresholds.')
+    values = np.asarray(reference.get('risks', []), dtype=float)
+    if (values.ndim != 1 or len(values) != n or n == 0 or
+            not np.isfinite(values).all() or (values < 0).any() or (values > 1).any()):
+        raise ValueError('PRI reference must contain one finite probability per derivation patient.')
+    if not np.allclose(np.percentile(values, [25, 75]),
+                       [thresholds['q25'], thresholds['q75']], rtol=0, atol=1e-12):
+        raise ValueError('PRI reference quartiles disagree with the saved out-of-fold study thresholds.')
+    return sorted(values.tolist())
+
+
 def load_bundle(path):
     import pandas as pd
     # pandas' documented pickle compatibility reader handles the old Index classes.
@@ -155,7 +173,7 @@ def validate_single(portable, bundle, record, expected):
 def export():
     conf = ai.read_config()
     sources = {}
-    for key in ai.SOURCE_KEYS:
+    for key in ai.source_keys(conf):
         path = Path(conf[key])
         stat = path.stat()
         sources[key] = {'stat': [stat.st_size, stat.st_mtime_ns],
@@ -209,12 +227,15 @@ def export():
         validations[name] = {'records': len(complete), 'maximumAbsoluteRiskError': validate(model, bundles[name], complete)}
     distributions = {key: sorted(r[key] for r in derivation if r[key] is not None)
                      for key in ('Age at CCTA', 'Coronary artery calcium score', 'Clinical Likelihood')}
+    if 'priOofReference' in conf:
+        distributions['PRI-only'] = load_pri_reference(conf['priOofReference'], thresholds, len(derivation))
     sex_known = [r for r in derivation if r['Sex'] in ('Man', 'Woman')]
     out = {'version': ai.VERSION, 'configurationDigest': ai.config_digest(conf), 'sources': sources,
            'modelRevision': hashlib.sha256(json.dumps(sources, sort_keys=True).encode()).hexdigest()[:16],
            'horizonMonths': horizon, 'models': models, 'patients': patients,
            'thresholds': {'q25': thresholds['q25'], 'q75': thresholds['q75'],
-                          'source': thresholds['threshold_source'], 'exactPercentileAvailable': False},
+                          'source': thresholds['threshold_source'],
+                          'exactPercentileAvailable': 'PRI-only' in distributions},
            'cohort': {'n': len(derivation), 'events': int(sum(events)), 'sexKnown': len(sex_known),
                       'womenPercent': 100 * sum(r['Sex'] == 'Woman' for r in sex_known) / len(sex_known),
                       'medianAge': float(np.median(distributions['Age at CCTA']))},

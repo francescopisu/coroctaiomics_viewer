@@ -5,7 +5,7 @@ import {contours,contourPath} from './contours';
 import {planeBasis,directionLabel,drawCube} from './orientation';
 import {lumenReference} from './diameter';
 import {clampSlice,nearestCentreline} from './sliceNavigation';
-export function SliceView({kind,plane,data,c,onSelect,onNavigate,register}:{kind:'cross'|'axial';plane?:Plane;data:Case;c:Controls;onSelect:(i:number)=>void;onNavigate:(i:number)=>void;register:(canvas:HTMLCanvasElement|null)=>void}){
+export function SliceView({kind,plane,data,c,onSelect,onNavigate}:{kind:'cross'|'axial';plane?:Plane;data:Case;c:Controls;onSelect:(i:number)=>void;onNavigate:(i:number)=>void}){
   const ref=useRef<HTMLCanvasElement>(null),host=useRef<HTMLDivElement>(null),latest=useRef({c,onNavigate}),drag=useRef<{y:number;index:number;moved:boolean;pointer:number}|undefined>(undefined);
   latest.current={c,onNavigate};const [size,setSize]=useState(0);
   const count=kind==='cross'?data.vessels[c.vessel].points.length:data.geometry.shape[2],current=kind==='cross'?c.index:axialIndex(data,c);
@@ -72,7 +72,7 @@ export function SliceView({kind,plane,data,c,onSelect,onNavigate,register}:{kind
       const x=(e.clientX-rect.left)/rect.width*plane.width-.5,y=(e.clientY-rect.top)/rect.height*plane.height-.5,z=axialIndex(data,c);
       const point=a.slice(0,3).map(row=>row[0]*x+row[1]*y+row[2]*z+row[3]) as Vec3;onSelect(nearestCentreline(data,c.vessel,point));}}
     onPointerCancel={()=>{drag.current=undefined;}} onLostPointerCapture={()=>{drag.current=undefined;}}>
-    <canvas aria-label={kind==='cross'?'Orthogonal cross-section':'Axial CCTA'} data-lumen-diameter-mm={reference?.diameterMm??''} ref={el=>{ref.current=el;register(el);}}/>
+    <canvas aria-label={kind==='cross'?'Orthogonal cross-section':'Axial CCTA'} data-lumen-diameter-mm={reference?.diameterMm??''} ref={ref}/>
     {!plane&&<span className="loading">Loading…</span>}
   </div>;
 }

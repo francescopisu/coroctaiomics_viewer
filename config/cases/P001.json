@@ -1,0 +1,12 @@
+{
+  "patientId": "P001",
+  "pipelineRoot": "/Users/francescopisu/Workspace/Research/Projects/CoroCTAiomics/working_solution/coroctaiomics",
+  "ct": "/Volumes/X9Pro/datasets/new/P001/P001.nii.gz",
+  "outputRoot": "/Volumes/X9Pro/datasets/new/P001/output",
+  "centerlineFiles": {"LAD": "P001_LAD_1.csv", "LCx": "P001_LCx_3.csv", "RCA": "P001_RCA_1.csv"},
+  "radiomicFeatureMaps": "/Volumes/X9Pro/datasets/new/P001/output/radiomics_r4_iso/maps",
+  "aiInput": {
+    "radiomicsCsv": "/Volumes/X9Pro/datasets/new/P001/output/radiomics_r4_iso/P001_radiomics.csv",
+    "clinicalJson": "config/patients/P001.json"
+  }
+}

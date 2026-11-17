@@ -26,6 +26,18 @@ class FeatureProcessingTests(unittest.TestCase):
             (root/'LAD').mkdir()
             with self.assertRaisesRegex(ValueError,'Ambiguous'):discover_maps(root)
 
+    def test_flat_pipeline_maps_preserve_feature_names_and_reject_mixed_patients(self):
+        with tempfile.TemporaryDirectory() as t:
+            root=Path(t)
+            for vessel in ['LAD','LCX','RCA']:(root/f'P001_{vessel}_wavelet-LHL_glcm_Idn.nii.gz').touch()
+            (root/'._P001_LAD_example.nii.gz').touch()
+            maps=discover_maps(root,'P001')
+            self.assertEqual({v:len(f) for v,f in maps.items()},{'LAD':1,'LCx':1,'RCA':1})
+            self.assertEqual(maps['LCx'][0]['name'],'wavelet-LHL_glcm_Idn')
+            with self.assertRaisesRegex(ValueError,'patient prefix'):discover_maps(root,'P002')
+            (root/'LAD').mkdir()
+            with self.assertRaisesRegex(ValueError,'Ambiguous'):discover_maps(root,'P001')
+
     def test_grid_mismatch_is_rejected_instead_of_visual_axis_guessing(self):
         with tempfile.TemporaryDirectory() as t:
             root=Path(t);mask=np.zeros((6,6,6),dtype='u1');mask[2:4,2:4,2:4]=1

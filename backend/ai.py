@@ -5,10 +5,11 @@ import os
 from functools import lru_cache
 from pathlib import Path
 import numpy as np
-from .data import ROOT
+from .data import ROOT, read_case_config
 
 VERSION = 1
 SOURCE_KEYS = ('derivation', 'validation', 'priModel', 'adjustedModel', 'thresholds')
+OPTIONAL_SOURCE_KEYS = ('priOofReference',)
 
 
 def config_path():
@@ -19,7 +20,13 @@ def read_config():
     conf = json.loads(config_path().read_text())
     if any(not isinstance(conf.get(key), str) for key in SOURCE_KEYS):
         raise ValueError('Set derivation, validation, priModel, adjustedModel and thresholds in config/ai.local.json.')
+    if any(key in conf and not isinstance(conf[key], str) for key in OPTIONAL_SOURCE_KEYS):
+        raise ValueError('priOofReference must be a path to the exported out-of-fold PRI reference JSON.')
     return conf
+
+
+def source_keys(conf):
+    return (*SOURCE_KEYS, *(key for key in OPTIONAL_SOURCE_KEYS if key in conf))
 
 
 def config_digest(conf):
@@ -77,6 +84,24 @@ def percentile(values, value):
                         np.searchsorted(ordered, value, 'right')) / (2 * len(ordered)))
 
 
+def feature_reference(patients, name, value):
+    """Descriptive native-value reference, before ComBat/scaling, derivation only.
+
+    This is a cohort position, not the patient's signed Cox contribution.
+    Validation patients and non-finite/missing observations never enter it.
+    """
+    values = sorted(float(record[name]) for record in patients
+                    if record.get('sourceCohort') == 'derivation'
+                    and isinstance(record.get(name), (int, float))
+                    and np.isfinite(record[name]))
+    if not values:
+        return {'median': None, 'iqr': None, 'percentile': None, 'n': 0}
+    q25, median, q75 = np.percentile(values, [25, 50, 75])
+    valid = isinstance(value, (int, float)) and np.isfinite(value)
+    return {'median': float(median), 'iqr': [float(q25), float(q75)],
+            'percentile': percentile(values, value) if valid else None, 'n': len(values)}
+
+
 @lru_cache(maxsize=2)
 def _read_reference(path, modified, size):
     with open(path) as file:
@@ -98,7 +123,7 @@ def reference():
         raise ValueError('AI configuration changed. Run python -m backend.export_ai again.')
     # Source availability is optional after export, just as for the imaging cache.
     # If a source is mounted and changed, never silently serve old results.
-    for key in SOURCE_KEYS:
+    for key in source_keys(conf):
         source = Path(conf[key])
         if source.is_file():
             state = source.stat()
@@ -107,9 +132,23 @@ def reference():
     return data
 
 
+def patient_record(patient_id, data, case_config=None):
+    if case_config is None:
+        try:
+            case_config = read_case_config(patient_id)
+        except LookupError:
+            case_config = None
+    if case_config and case_config.get('aiInput'):
+        if patient_id in data['patients']:
+            raise ValueError('External AI input conflicts with an existing cohort patient ID.')
+        from .external_ai import load_record
+        return load_record(case_config, data['models']['pri']['features'])
+    return data['patients'].get(patient_id)
+
+
 def results(patient_id):
     data = reference()
-    record = data['patients'].get(patient_id)
+    record = patient_record(patient_id, data)
     if record is None:
         raise LookupError('No patient record matching this configured case in the AI datasets.')
     models = data['models']
@@ -122,7 +161,14 @@ def results(patient_id):
     pri = predictions['pri']['risk']
     thresholds = data['thresholds']
     stratum = risk_stratum(pri, thresholds['q25'], thresholds['q75']) if pri is not None else None
+    pri_values = data['distributions'].get('PRI-only', [])
+    pri_reference = {'percentile': percentile(pri_values, pri), 'n': len(pri_values),
+                     'source': thresholds['source']}
     comparisons = []
+    if pri_values:
+        comparisons.append({'name': 'PRI-only', 'label': 'PRI-only', 'value': pri,
+                            'median': float(np.median(pri_values)),
+                            'percentile': pri_reference['percentile'], 'n': len(pri_values)})
     for name, label in [('Age at CCTA', 'Age'), ('Coronary artery calcium score', 'Agatston'),
                         ('Clinical Likelihood', 'ESC RF-CL')]:
         values = data['distributions'][name]
@@ -135,9 +181,10 @@ def results(patient_id):
         label, vessel = name.rsplit('_', 1)
         features.append({'name': name, 'mapName': label, 'vessel': 'LCx' if vessel == 'LCX' else vessel,
                          'value': record.get(name),
+                         'reference': feature_reference(data['patients'].values(), name, record.get(name)),
                          'models': {key: model['hr'][name] for key, model in models.items()}})
     return {'patientId': patient_id, 'sourceCohort': record['sourceCohort'],
             'horizonMonths': data['horizonMonths'], 'predictions': predictions,
-            'stratum': stratum, 'thresholds': thresholds, 'patient': record,
+            'stratum': stratum, 'thresholds': thresholds, 'priReference': pri_reference, 'patient': record,
             'cohort': {**data['cohort'], 'comparisons': comparisons}, 'features': features,
             'modelRevision': data['modelRevision']}

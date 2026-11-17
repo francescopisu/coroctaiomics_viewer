@@ -44,7 +44,7 @@ test('nearby vessel bends cannot turn the local section marker into a curved tra
 test('rendered curved marker stays straight and follows the local orthogonal frame through rotation',async({page,request})=>{
   test.setTimeout(180000);const data=await (await request.get('/api/case')).json(),f=data.vessels.LAD,index=30,points=f.points as Vec3[];
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto('/');await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:90000});
+  await page.goto('/viewer/1718');await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:90000});
   const curved=page.getByLabel('Curved CPR',{exact:true}),crossImage=await page.locator('.cross canvas').evaluate((el:HTMLCanvasElement)=>el.toDataURL());
   const axis=norm(sub(points.at(-1)!,points[0])),u=norm(sub(f.u[0],axis.map(x=>x*dot(f.u[0],axis)))),v=cross(axis,u),center=points[0].map((_,j)=>points.reduce((sum,p)=>sum+p[j],0)/points.length) as Vec3;
   const width=25+2*Math.max(...points.map(p=>Math.hypot(...cross(sub(p,center),axis))));let initialLine='';
@@ -76,6 +76,5 @@ test('rendered curved marker stays straight and follows the local orthogonal fra
     expect(await page.locator('.cross canvas').evaluate((el:HTMLCanvasElement)=>el.toDataURL())).toBe(crossImage);
     if(step===0||Math.round(angles[step])===244)await page.screenshot({path:`test-results/orthogonal-cpr-marker-${Math.round(angles[step])}.png`});
   }
-  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Export',exact:true}).click();await (await download).saveAs('test-results/orthogonal-cpr-marker-export.png');
   expect(errors).toEqual([]);await expect(page.getByRole('alert')).toHaveCount(0);
 });

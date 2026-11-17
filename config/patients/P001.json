@@ -1,0 +1,19 @@
+{
+  "patientId": "P001",
+  "KVP": 120,
+  "Clinical Likelihood": 4,
+  "Clinical Likelihood Class": "Very low",
+  "SS45": "No",
+  "Age at CCTA": 42,
+  "Sex": "Man",
+  "Body mass index (BMI)": null,
+  "Coronary artery calcium score": 26,
+  "CADRADS": "Score 2",
+  "Smoker": "Yes",
+  "Hypertension": "No",
+  "Diabetes": "No",
+  "Dyslipidemia": "Yes",
+  "Dyspnea": "No",
+  "Type of chest pain ": "No chest pain",
+  "Familiarity for CAD": null
+}

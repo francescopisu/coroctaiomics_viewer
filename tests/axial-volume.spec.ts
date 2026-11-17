@@ -14,8 +14,8 @@ test('resident slices share CT memory and decode each vessel mask independently'
 test('axial navigation remains resident with no network requests or loading frames',async({page,request})=>{
   test.setTimeout(180000);const data=await (await request.get('/api/case')).json(),errors:string[]=[],requests:string[]=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().includes('/api/'))requests.push(r.url());});
-  await page.goto('/');await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:120000});
-  const info=data.featureMaps.LAD[0];if(info){await page.getByLabel('Radiomic feature map',{exact:true}).selectOption(info.id);await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:60000});}
+  await page.goto('/viewer/1718');await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:120000});
+  const info=data.featureMaps.LAD[0];if(info){await page.getByLabel('Radiomic feature map',{exact:true}).selectOption(info.id);await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:60000});}
   const before=requests.length,canvas=page.locator('.axial canvas'),navigation=page.getByRole('group',{name:'Axial slice navigation'}),start=Number(await canvas.getAttribute('data-slice-index'));
   // Once initial data and the selected map are loaded, disallow every API call.
   await page.route('**/api/**',route=>route.abort());

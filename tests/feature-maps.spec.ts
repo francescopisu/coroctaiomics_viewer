@@ -4,17 +4,17 @@ test('vessel-specific radiomic maps overlay both CPRs and linked CCTA slices',as
   test.setTimeout(300000);const manifest=await (await request.get('/api/case')).json();
   test.skip(!Object.values(manifest.featureMaps??{}).some((f:any)=>f.length),'No configured maps');
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  await page.goto('/');const selector=page.getByLabel('Radiomic feature map',{exact:true}),exportButton=page.getByRole('button',{name:'Export',exact:true});
-  await expect(exportButton).toBeEnabled({timeout:90000});
+  await page.goto('/viewer/1718');const selector=page.getByLabel('Radiomic feature map',{exact:true}),viewer=page.locator('main');
+  await expect(viewer).toHaveAttribute('aria-busy','false',{timeout:90000});
   for(const vessel of ['LAD','LCx','RCA']){
-    await page.getByLabel('Vessel',{exact:true}).selectOption(vessel);await expect(exportButton).toBeEnabled({timeout:90000});
+    await page.getByLabel('Vessel',{exact:true}).selectOption(vessel);await expect(viewer).toHaveAttribute('aria-busy','false',{timeout:90000});
     const maps=manifest.featureMaps[vessel];await expect(selector.locator('option')).toHaveCount(maps.length+1);
     expect(await selector.locator('option').allTextContents()).toEqual(['No feature map',...maps.map((f:any)=>f.name)]);
     if(!maps.length)continue;
-    const position=page.getByRole('group',{name:'Orthogonal slice navigation'});await position.focus();await position.press('Home');for(let i=0;i<20;i++)await position.press('ArrowDown');await expect(exportButton).toBeEnabled({timeout:90000});
+    const position=page.getByRole('group',{name:'Orthogonal slice navigation'});await position.focus();await position.press('Home');for(let i=0;i<20;i++)await position.press('ArrowDown');await expect(viewer).toHaveAttribute('aria-busy','false',{timeout:90000});
     const cross=await page.locator('.cross canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL()),axial=await page.locator('.axial canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL());
     const recon=await page.getByLabel('Coronary reconstructions',{exact:true}).screenshot();
-    await selector.selectOption(maps[0].id);await expect(exportButton).toBeEnabled({timeout:60000});await expect(page.getByLabel('Feature color scale')).toBeVisible();
+    await selector.selectOption(maps[0].id);await expect(viewer).toHaveAttribute('aria-busy','false',{timeout:60000});await expect(page.getByLabel('Feature color scale')).toBeVisible();
     expect(await page.locator('.cross canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).not.toBe(cross);
     expect(await page.locator('.axial canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).not.toBe(axial);
     expect((await page.getByLabel('Coronary reconstructions',{exact:true}).screenshot()).equals(recon)).toBe(false);
@@ -28,12 +28,11 @@ test('vessel-specific radiomic maps overlay both CPRs and linked CCTA slices',as
         expect(await page.locator('.cross canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).toBe(crossMapped);
         expect(await page.locator('.axial canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).toBe(axialMapped);
       }
-      await page.getByText('Layers',{exact:true}).click();const opacity=page.getByRole('slider',{name:'Feature map opacity',exact:true});await opacity.focus();await opacity.press('Home');
+      await page.getByLabel('Layers',{exact:true}).click();const opacity=page.getByRole('slider',{name:'Feature map opacity',exact:true});await opacity.focus();await opacity.press('Home');
       expect(await page.locator('.cross canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).not.toBe(crossMapped);
-      await opacity.press('End');await page.getByText('Layers',{exact:true}).click();
-      const download=page.waitForEvent('download');await exportButton.click();await (await download).saveAs('test-results/radiomic-map-export.png');
+      await opacity.press('End');await page.getByLabel('Layers',{exact:true}).click();
     }
-    await selector.selectOption('');await expect(exportButton).toBeEnabled();await expect(page.getByLabel('Feature color scale')).toHaveCount(0);
+    await selector.selectOption('');await expect(viewer).toHaveAttribute('aria-busy','false');await expect(page.getByLabel('Feature color scale')).toHaveCount(0);
     expect(await page.locator('.cross canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).toBe(cross);
     expect(await page.locator('.axial canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).toBe(axial);
   }

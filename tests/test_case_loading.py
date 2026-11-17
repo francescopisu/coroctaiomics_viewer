@@ -49,9 +49,18 @@ class ConfigurationValidationTests(unittest.TestCase):
         import backend.data as data
         original=data.read_case_config()
         for update in [{'outputRoot':str(Path(original['outputRoot']).parent/'different-case')},
+                       {'outputRoot':str(Path(original['outputRoot']).parent/'different-case'/'output')},
                        {'centerlineFiles':{**original['centerlineFiles'],'LAD':'1_LAD_3.csv'}}]:
             with self.subTest(update=update),patch.object(data,'read_case_config',return_value={**original,**update}):
                 with self.assertRaisesRegex(ValueError,'does not match case|does not match patientId'):configuration()
+
+    def test_nested_external_output_folder_is_supported(self):
+        from backend.data import read_case_config
+        conf,paths=configuration(read_case_config('P001'))
+        self.assertEqual(Path(conf['outputRoot']).parent.name,'P001')
+        self.assertEqual(Path(conf['outputRoot']).name,'output')
+        self.assertEqual({v:len(maps) for v,maps in conf['featureFiles'].items()},{'LAD':3,'LCx':4,'RCA':4})
+        self.assertEqual(paths['line_LCx'].name,'P001_LCx_2.csv')
 
     def test_configuration_digest_tracks_semantics(self):
         import backend.data as data

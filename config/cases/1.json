@@ -1,0 +1,7 @@
+{
+  "patientId": "1",
+  "pipelineRoot": "/Users/francescopisu/Workspace/Research/Projects/CoroCTAiomics/working_solution/coroctaiomics",
+  "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/1_500/1.nii.gz",
+  "outputRoot": "/Volumes/X9Pro/output/CoroCTAiomics/v2/1",
+  "centerlineFiles": {"LAD": "1_LAD_3.csv", "LCx": "1_LCx_1.csv", "RCA": "1_RCA_1.csv"}
+}

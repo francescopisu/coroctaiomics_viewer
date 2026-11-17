@@ -18,7 +18,7 @@ async function installPhantom(page:Page,textured=false){
   const volume={dimensions:[nx,ny,nz],spacing:[spacing,spacing,spacing],origin:[-15,-20,0],direction:[1,0,0,0,1,0,0,0,1],affineLPS,scalarType:'int16',ct:'/api/test/ct',lumen:'/api/test/lumen',cpe:'/api/test/cpe'};
   await page.route('**/api/**',async route=>{
     const path=new URL(route.request().url()).pathname;
-    if(path==='/api/case')return route.fulfill({json:{patientId:'synthetic',sampling:{widthPixels:50,resolutionMm:.5,pointSpacingMm:1},geometry:{shape:[nx,ny,nz],affineLPS},vessels:{LAD:line,LCx:line,RCA:line},volumes:{LAD:volume,LCx:volume,RCA:volume},surfaces:{},featureMaps:{LAD:[],LCx:[],RCA:[]},axial:'/api/test/axial',axialVolume:{ct:'/api/test/ct',labels:'/api/test/lumen',scalarType:'int16'}}});
+    if(path==='/api/cases/synthetic')return route.fulfill({json:{patientId:'synthetic',sampling:{widthPixels:50,resolutionMm:.5,pointSpacingMm:1},geometry:{shape:[nx,ny,nz],affineLPS},vessels:{LAD:line,LCx:line,RCA:line},volumes:{LAD:volume,LCx:volume,RCA:volume},surfaces:{},featureMaps:{LAD:[],LCx:[],RCA:[]},axial:'/api/test/axial',axialVolume:{ct:'/api/test/ct',labels:'/api/test/lumen',scalarType:'int16'}}});
     if(path.startsWith('/api/test/axial/')){
       const k=Number(path.split('/').at(-1)),plane=Float32Array.from(ct.subarray(k*nx*ny,(k+1)*nx*ny));
       return route.fulfill({body:Buffer.concat([Buffer.from(plane.buffer),Buffer.from(mask.subarray(k*nx*ny,(k+1)*nx*ny))])});
@@ -32,7 +32,7 @@ test('a known-diameter vessel retains horizontal scale through curved CPR rotati
   // every rotating sampling direction must show the same 4 mm diameter.
   await installPhantom(page);
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  await page.goto('/');await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:60000});
+  await page.goto('/viewer/synthetic');await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:60000});
   const curved=page.getByLabel('Curved CPR',{exact:true}),straight=page.getByLabel('Straightened reconstruction',{exact:true});
   const widths:number[]=[];
   for(let step=0;step<8;step++){
@@ -67,11 +67,11 @@ test('a known-diameter vessel retains horizontal scale through curved CPR rotati
 
 test('adaptive CPR antialiasing reduces undersampled background while preserving the vessel core',async({page})=>{
   await installPhantom(page,true);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  await page.goto('/');await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:60000});
+  await page.goto('/viewer/synthetic');await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:60000});
   const straight=page.getByLabel('Straightened reconstruction',{exact:true}),curved=page.getByLabel('Curved CPR',{exact:true});
   const capture=(path?:string)=>straight.screenshot({path,style:'.angle,.position-marker{visibility:hidden}'});
   const on=await capture('test-results/antialias-phantom-on.png'),curvedOn=await curved.screenshot(),crossOn=await page.locator('.cross canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL());
-  await page.getByText('Layers',{exact:true}).click();await page.getByRole('checkbox',{name:'Pixel antialiasing',exact:true}).uncheck();await page.getByText('Layers',{exact:true}).click();const off=await capture('test-results/antialias-phantom-off.png');
+  await page.getByLabel('Layers',{exact:true}).click();await page.getByRole('checkbox',{name:'Pixel antialiasing',exact:true}).uncheck();await page.getByLabel('Layers',{exact:true}).click();const off=await capture('test-results/antialias-phantom-off.png');
   const metric=async(buffer:Buffer)=>page.evaluate(async base64=>{
     const im=new Image();im.src=`data:image/png;base64,${base64}`;await im.decode();const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const ctx=c.getContext('2d')!;ctx.drawImage(im,0,0);const a=ctx.getImageData(0,0,c.width,c.height).data;
     const background:number[]=[],core:number[]=[];for(let y=Math.floor(c.height*.3);y<c.height*.7;y++){
@@ -83,6 +83,6 @@ test('adaptive CPR antialiasing reduces undersampled background while preserving
   const a=await metric(on),b=await metric(off);console.log('Background variance AA on/off:',a.variance,b.variance);
   expect(a.variance).toBeLessThan(b.variance*.85);expect(a.core).toEqual(b.core);
   expect((await curved.screenshot()).equals(curvedOn)).toBe(true);expect(await page.locator('.cross canvas').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).toBe(crossOn);
-  await page.getByText('Layers',{exact:true}).click();await page.getByRole('checkbox',{name:'Pixel antialiasing',exact:true}).check();await page.getByText('Layers',{exact:true}).click();expect((await capture()).equals(on)).toBe(true);
+  await page.getByLabel('Layers',{exact:true}).click();await page.getByRole('checkbox',{name:'Pixel antialiasing',exact:true}).check();await page.getByLabel('Layers',{exact:true}).click();expect((await capture()).equals(on)).toBe(true);
   await test.info().attach('antialias-on.png',{body:on,contentType:'image/png'});await test.info().attach('antialias-off.png',{body:off,contentType:'image/png'});expect(errors).toEqual([]);
 });

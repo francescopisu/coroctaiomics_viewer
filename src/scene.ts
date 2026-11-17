@@ -12,6 +12,11 @@ import vtkCellPicker from '@kitware/vtk.js/Rendering/Core/CellPicker';
 import {binary, rgba, vessels, type Case, type Controls, type Vec3, type Vessel,type TransferProgress} from './types';
 import {compositeFeature,type FeaturePlane} from './slices';
 import {cameraBasis,cubeSvg,drawCube} from './orientation';
+import type {AxialVolume} from './axialVolume';
+import {packCpeVolume,attenuationBands,volumePresets} from './cpeVolumeData';
+import {CpeVolumeRenderer} from './cpeVolume';
+
+export interface CpeVolumeStatus {phase:'idle'|'preparing'|'ready'|'error';message?:string}
 
 const color = (hex: string) => [1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255) as Vec3;
 const plus = (p: Vec3,u: Vec3,v: Vec3,a: number,b: number) => p.map((q,i)=>q+a*u[i]+b*v[i]) as Vec3;
@@ -23,7 +28,9 @@ export class Scene {
   private marker: any; private ring: any;private ringActor:any; private plane: any; private planeActor: any; private texture: any; private image: any;
   private observer: ResizeObserver; private down: number[]=[];
   private cube:SVGSVGElement;private cameraSubscription:{unsubscribe:()=>void};
-  constructor(private container: HTMLElement, private data: Case, private select: (v: Vessel,index: number)=>void) {
+  private nativeStack?:AxialVolume;private volumeRenderer?:CpeVolumeRenderer;private volumeAbort=new AbortController();
+  private volumePending=false;private volumeFailed=false;private current?:Controls;private currentSamples?:{ct:Float32Array|Int16Array;feature?:FeaturePlane};
+  constructor(private container: HTMLElement, private data: Case, private select: (v: Vessel,index: number)=>void,private volumeStatus:(status:CpeVolumeStatus)=>void=()=>{}) {
     this.window=vtkGenericRenderWindow.newInstance({background:[0.035,0.048,0.068]});
     this.window.setContainer(container); this.renderer=this.window.getRenderer(); this.renderWindow=this.window.getRenderWindow();
     this.cube=document.createElementNS('http://www.w3.org/2000/svg','svg');this.cube.setAttribute('viewBox','0 0 68 68');this.cube.setAttribute('role','img');this.cube.setAttribute('aria-label','3D LPS orientation cube');this.cube.classList.add('lps-cube');this.cube.style.visibility='hidden';container.append(this.cube);
@@ -67,19 +74,47 @@ export class Scene {
     }));
     if(!this.disposed){this.smoothed=undefined;this.reset();this.loaded=true;}
   }
+  setNativeStack(stack?:AxialVolume){this.nativeStack=stack;if(this.current)this.update(this.current,this.currentSamples);}
+  retryVolume(){this.volumeFailed=false;if(this.current)this.update(this.current,this.currentSamples);}
+  private async prepareVolume(){
+    if(!this.nativeStack||this.volumePending||this.volumeFailed||this.volumeRenderer)return;
+    this.volumePending=true;this.volumeStatus({phase:'preparing'});
+    try{
+      const packed=await packCpeVolume(this.nativeStack,this.data.geometry,this.volumeAbort.signal);
+      if(this.disposed)return;
+      this.volumeRenderer=new CpeVolumeRenderer(this.renderer,this.data,packed);
+      this.container.dataset.volumeVoxels=String(packed.count);this.container.dataset.volumeStart=packed.start.join(',');
+      this.container.dataset.volumeDimensions=packed.info.dimensions.join(',');
+      if(this.current)this.update(this.current,this.currentSamples);
+      this.volumeStatus({phase:'ready'});this.container.dataset.volumeReady='true';
+    }catch(error){
+      if(!this.disposed&&!(error instanceof DOMException&&error.name==='AbortError')){
+        this.volumeFailed=true;this.volumeRenderer?.dispose();this.volumeRenderer=undefined;
+        if(this.current)this.update(this.current,this.currentSamples);
+        this.volumeStatus({phase:'error',message:error instanceof Error?error.message:'CPE volume unavailable.'});
+      }
+    }finally{this.volumePending=false;}
+  }
   update(c:Controls,samples?:{ct:Float32Array|Int16Array;feature?:FeaturePlane}) {
     // Do not render default-position markers or partially loaded surfaces before
     // the camera is fitted. ResizeObserver can request a frame during loading.
     if(this.disposed||!this.loaded)return;
+    this.current=c;this.currentSamples=samples;
+    if(c.render3d==='cpe'&&!this.volumeRenderer)void this.prepareVolume();
+    this.volumeRenderer?.update(c);
+    const volumeMode=c.render3d==='cpe'&&!!this.volumeRenderer,context=volumeMode?c.volumeContext:1;
+    this.container.dataset.renderMode=volumeMode?'cpe':'anatomy';
+    this.container.dataset.volumeLighting=c.volumeLighting;this.container.dataset.volumePreset=c.volumePreset;
+    this.container.dataset.volumeMaskBits=String((c.cpe.LAD?2:0)|(c.cpe.LCx?4:0)|(c.cpe.RCA?8:0));
     this.updateCube();
     if(this.smoothed!==c.smoothMeshes){for(const {poly,raw,smooth,normals} of Object.values(this.meshData)){
       poly.getPoints().setData(c.smoothMeshes?smooth:raw,3);
       poly.getPointData().setNormals(c.smoothMeshes?normals:null);poly.modified();
     }this.smoothed=c.smoothMeshes;}
     for(const [key,actor] of Object.entries(this.actors)){
-      if(key==='ascending_aorta'){actor.setVisibility(c.aorta);actor.getProperty().setColor(.77,.81,.84);actor.getProperty().setOpacity(c.aortaOpacity);}
-      else if(key.startsWith('lumen_')){actor.setVisibility(c.lumen && key===`lumen_${c.side}`); actor.getProperty().setColor(0.94,0.95,0.96); actor.getProperty().setOpacity(c.lumenOpacity);}
-      else {const v=key.replace(/^(cpe_|line_)/,'') as Vessel; actor.setVisibility(key.startsWith('cpe_') ? c.cpeVisible&&c.cpe[v]:c.centerline); actor.getProperty().setColor(...color(c.colors[v])); actor.getProperty().setOpacity(key.startsWith('cpe_')?c.cpeOpacity:1); if(key.startsWith('line_'))actor.getProperty().setLineWidth(v===c.vessel?5:2);}
+      if(key==='ascending_aorta'){actor.setVisibility(c.aorta);actor.getProperty().setColor(.77,.81,.84);actor.getProperty().setOpacity(c.aortaOpacity*context);}
+      else if(key.startsWith('lumen_')){actor.setVisibility(c.lumen && key===`lumen_${c.side}`); actor.getProperty().setColor(0.94,0.95,0.96); actor.getProperty().setOpacity(c.lumenOpacity*context);}
+      else {const v=key.replace(/^(cpe_|line_)/,'') as Vessel; actor.setVisibility(key.startsWith('cpe_') ? !volumeMode&&c.cpeVisible&&c.cpe[v]:c.centerline); actor.getProperty().setColor(...color(c.colors[v])); actor.getProperty().setOpacity(key.startsWith('cpe_')?c.cpeOpacity:context); if(key.startsWith('line_'))actor.getProperty().setLineWidth(v===c.vessel?5:2);}
     }
     const f=this.data.vessels[c.vessel],p=f.points[c.index],u=f.u[c.index],v=f.v[c.index];
     this.marker.setPosition(...p);this.marker.setVisibility(true);
@@ -129,12 +164,31 @@ export class Scene {
   private basis(){const camera=this.renderer.getActiveCamera();return cameraBasis(camera.getPosition(),camera.getFocalPoint(),camera.getViewUp());}
   private updateCube(){if(!this.loaded||this.disposed)return;this.cube.style.visibility='visible';this.cube.innerHTML=cubeSvg(this.basis());}
   async capture():Promise<string> {
-    const basis=this.basis(),width=this.container.clientWidth,result=await this.window.getApiSpecificRenderWindow().captureNextImage();
-    const image=new Image();image.src=result;await image.decode();const out=document.createElement('canvas');out.width=image.width;out.height=image.height;
-    const ctx=out.getContext('2d')!,scale=image.width/width;ctx.drawImage(image,0,0);drawCube(ctx,basis,8*scale,out.height-76*scale,68*scale);return out.toDataURL();
+    const basis=this.basis(),width=this.container.clientWidth;this.volumeRenderer?.captureQuality(true);
+    try{
+      const result=await this.window.getApiSpecificRenderWindow().captureNextImage();
+      const image=new Image();image.src=result;await image.decode();const out=document.createElement('canvas');out.width=image.width;out.height=image.height;
+      const ctx=out.getContext('2d')!,scale=image.width/width;ctx.drawImage(image,0,0);drawCube(ctx,basis,8*scale,out.height-76*scale,68*scale);
+      if(this.current?.render3d==='cpe'&&this.volumeRenderer){
+        ctx.font=`${10*scale}px system-ui`;ctx.fillStyle='#c4d1da';ctx.fillText(`CPE volume · ${volumePresets[this.current.volumePreset]} · HU bands`,10*scale,20*scale);
+        const rows:{band:typeof attenuationBands[number];width:number}[][]=[[]];let used=0;
+        for(const band of attenuationBands){
+          const width=ctx.measureText(band.label).width+24*scale;
+          if(used+width>out.width-100*scale&&rows.at(-1)!.length){rows.push([]);used=0;}
+          rows.at(-1)!.push({band,width});used+=width;
+        }
+        rows.forEach((row,index)=>{
+          let x=Math.max(90*scale,out.width-10*scale-row.reduce((sum,item)=>sum+item.width,0));
+          const y=out.height-12*scale-(rows.length-1-index)*15*scale;
+          row.forEach(({band,width})=>{ctx.fillStyle=band.color;ctx.fillRect(x,y-7*scale,6*scale,6*scale);ctx.fillStyle='#c4d1da';ctx.fillText(band.label,x+10*scale,y);x+=width;});
+        });
+      }
+      return out.toDataURL();
+    }finally{this.volumeRenderer?.captureQuality(false);}
   }
   dispose() {
-    this.disposed=true;this.observer.disconnect();this.container.removeEventListener('pointerdown',this.onDown);this.container.removeEventListener('pointerup',this.onUp);
+    this.disposed=true;this.volumeAbort.abort();this.volumeRenderer?.dispose();this.volumeRenderer=undefined;this.nativeStack=undefined;this.current=undefined;this.currentSamples=undefined;
+    this.observer.disconnect();this.container.removeEventListener('pointerdown',this.onDown);this.container.removeEventListener('pointerup',this.onUp);
     this.cameraSubscription.unsubscribe();this.cube.remove();
     this.renderer.removeAllActors();this.window.setContainer(null); [...new Set(this.objects)].reverse().forEach(o=>o.delete());
     const interactor=this.window.getInteractor();this.window.delete();interactor.delete();this.renderer.delete();this.renderWindow.delete();

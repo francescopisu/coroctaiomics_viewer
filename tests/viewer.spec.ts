@@ -3,7 +3,7 @@ import {test,expect} from '@playwright/test';
 test('five linked views: GPU curved CPR rotates and navigation stays synchronized',async({page})=>{
   test.setTimeout(180000);
   const errors:string[]=[];page.on('pageerror',e=>{errors.push(e.message);console.log('Browser error:',e.message);});page.on('console',m=>{if(m.type()==='error'){errors.push(m.text());console.log('Render error:',m.text());}});
-  await page.goto('/');await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:90000});
+  await page.goto('/viewer/1718');await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:90000});
   await expect(page.locator('canvas')).toHaveCount(4);
   await expect(page.getByRole('alert')).toHaveCount(0);
   const matchingHeights=async()=>{
@@ -14,9 +14,9 @@ test('five linked views: GPU curved CPR rotates and navigation stays synchronize
   };
   await matchingHeights();expect(await page.locator('.cross canvas').evaluate((el:HTMLCanvasElement)=>el.width)).toBe(1024);
   await page.screenshot({path:'test-results/five-views-initial.png'});
-  await page.getByText('Layers',{exact:true}).click();
+  await page.getByLabel('Layers',{exact:true}).click();
   await page.getByRole('checkbox',{name:'3D plane',exact:true}).check();
-  await page.getByText('Layers',{exact:true}).click();
+  await page.getByLabel('Layers',{exact:true}).click();
   const curved=page.getByLabel('Curved CPR',{exact:true}),position=page.getByRole('group',{name:'Orthogonal slice navigation'}),currentIndex=()=>page.locator('.cross canvas').getAttribute('data-centreline-index');
   const before=await curved.screenshot({style:'.angle,.position-marker{visibility:hidden}'});const crossBefore=await page.locator('.cross canvas').evaluate((el:HTMLCanvasElement)=>el.toDataURL());
   const straightBefore=await page.getByLabel('Straightened reconstruction',{exact:true}).screenshot();
@@ -57,23 +57,24 @@ test('five linked views: GPU curved CPR rotates and navigation stays synchronize
   await expect.poll(()=>page.locator('.axial canvas').evaluate((el:HTMLCanvasElement)=>el.toDataURL())).not.toBe(oldAxial);
   for(const vessel of ['LCx','RCA','LAD']){
     console.log('Loading',vessel);await page.getByLabel('Vessel',{exact:true}).selectOption(vessel);
-    await expect(page.getByRole('button',{name:'Export',exact:true})).toBeEnabled({timeout:90000});
+    await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:90000});
     await expect(page.getByLabel('Straightened rotation')).toHaveText('0°');await expect(page.getByLabel('CPR rotation')).toHaveText('0°');
     await matchingHeights();
     await position.focus();await position.press('Home');for(let i=0;i<20;i++)await position.press('ArrowDown');
     await expect(page.locator('.cross canvas')).toHaveAttribute('data-distance-mm','10');
     await expect(page.getByRole('alert')).toHaveCount(0);
   }
-  await page.getByText('Layers',{exact:true}).click();
+  await page.getByLabel('Layers',{exact:true}).click();
   for(const name of ['Lumen','Centerlines','LAD CPE','LCx CPE','RCA CPE','CCTA','3D plane']){
     const control=page.getByRole('checkbox',{name,exact:true});const value=await control.isChecked();await control.setChecked(!value);await control.setChecked(value);
   }
   await page.getByRole('slider',{name:'CPE opacity',exact:true}).focus();await page.getByRole('slider',{name:'CPE opacity',exact:true}).press('ArrowRight');
-  await page.getByText('Layers',{exact:true}).click();
+  await page.getByLabel('Layers',{exact:true}).click();
+  await page.getByLabel('Layers',{exact:true}).click();
   await page.getByRole('spinbutton',{name:'Window level',exact:true}).fill('300');
+  await page.getByLabel('Layers',{exact:true}).click();
   await page.getByRole('button',{name:'Reset',exact:true}).click();await expect(page.getByLabel('CPR rotation')).toHaveText('0°');
   await expect(page.getByLabel('Straightened rotation')).toHaveText('0°');
-  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Export',exact:true}).click();const exported=await download;await exported.saveAs('test-results/five-views-export.png');
   await expect.poll(()=>page.locator('.axial canvas').evaluate((el:HTMLCanvasElement)=>el.width)).toBe(600);
   await page.screenshot({path:'test-results/five-views-final.png'});
   expect(errors).toEqual([]);await expect(page.getByRole('alert')).toHaveCount(0);
@@ -83,7 +84,7 @@ test('five linked views: GPU curved CPR rotates and navigation stays synchronize
 test('read-only case and native axial endpoint reject unlisted data',async({request})=>{
   const current=await request.get('/api/case');expect(current.status()).toBe(200);expect(current.headers()['cache-control']).toBe('no-store');
   const manifest=await current.json(),base=`/api/cases/${manifest.patientId}`,[width,height,depth]=manifest.geometry.shape;
-  expect((await request.get(`/api/cases/${manifest.patientId==='1'?'2':'1'}`)).status()).toBe(404);
+  expect((await request.get('/api/cases/unlisted-case')).status()).toBe(404);
   expect((await request.get(`${base}/assets/axial.ct.npy`)).status()).toBe(404);
   expect((await request.get(`${base}/axial/-1`)).status()).toBe(404);
   expect((await request.get(`${base}/axial/${depth}`)).status()).toBe(404);

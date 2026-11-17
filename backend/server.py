@@ -7,25 +7,52 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
-from .data import ROOT, read_case_config, configuration_key, CASE_INTERPRETATION
+from .data import ROOT, read_case_config, configuration_key, CASE_INTERPRETATION, catalog_configurations
 
 app = FastAPI(title='Coronary CPE viewer', docs_url=None, redoc_url=None)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
-def manifest(case_id):
-    try: configured_id=read_case_config()['patientId']
+def manifest(case_id,case_config=None):
+    try: conf=read_case_config(case_id) if case_config is None else case_config;configured_id=conf['patientId']
+    except LookupError:raise HTTPException(404,'Patient is not in the case catalogue')
     except (OSError,ValueError,KeyError) as error: raise HTTPException(503,f'Invalid case configuration: {error}')
     if case_id != configured_id:
-        raise HTTPException(404, 'Only the configured case is available')
+        raise HTTPException(404, 'Patient is not in the case catalogue')
     path = ROOT / 'cache' / case_id / 'manifest.json'
     if not path.is_file():
         raise HTTPException(503, 'Case cache missing. Run python -m backend.prepare first.')
     m=json.loads(path.read_text())
-    try: key=configuration_key()
+    try: key=configuration_key(conf)
     except (OSError,ValueError,KeyError) as error: raise HTTPException(503,f'Invalid case configuration: {error}')
     if m.get('configurationKey')!=key or m.get('patientId')!=configured_id:
         raise HTTPException(409,'Case configuration changed. Run python -m backend.prepare, then reload the viewer.')
     return m
+
+@app.get('/api/patients')
+def get_patients():
+    try: cases=catalog_configurations()
+    except (OSError,ValueError,KeyError):raise HTTPException(503,'Patient catalogue unavailable. Check config/catalog.local.json.')
+    from .ai import reference, infer, risk_stratum, patient_record
+    try: ai=reference()
+    except (OSError,ValueError,KeyError,TypeError):ai=None
+    rows=[]
+    for pid in cases:
+        try:
+            m=manifest(pid,cases[pid])
+            available=bool(m.get('axialVolume')) and all((ROOT/'cache'/pid/name).is_file() for name in m['assets'])
+        except HTTPException:available=False
+        try:record=patient_record(pid,ai,cases[pid]) if ai else None
+        except (OSError,ValueError,TypeError,KeyError):record=None
+        predictions={}
+        for model in ('pri','adjusted'):
+            try: predictions[model]=infer(ai['models'][model],record)['risk'] if record else None
+            except (ValueError,TypeError,KeyError):predictions[model]=None
+        pri=predictions['pri']
+        rows.append({'patientId':pid,'available':available,'age':record.get('Age at CCTA') if record else None,
+                     'sex':record.get('Sex') if record else None,'cadRads':record.get('CADRADS') if record else None,
+                     'priRisk':pri,'adjustedRisk':predictions['adjusted'],
+                     'stratum':risk_stratum(pri,ai['thresholds']['q25'],ai['thresholds']['q75']) if pri is not None else None})
+    return JSONResponse({'patients':rows},headers={'Cache-Control':'no-store'})
 
 @app.get('/api/case')
 def get_current_case():
@@ -104,4 +131,8 @@ def get_feature_axial(case_id:str,feature_id:str,index:int):
     return Response(values.tobytes()+valid.tobytes(),media_type='application/octet-stream',headers={'Cache-Control':'no-cache'})
 
 if (ROOT / 'dist').is_dir():
+    @app.get('/viewer/{case_id}',include_in_schema=False)
+    @app.get('/patients',include_in_schema=False)
+    def viewer_page(case_id:str=''):
+        return FileResponse(ROOT/'dist/index.html',headers={'Cache-Control':'no-cache'})
     app.mount('/', StaticFiles(directory=ROOT/'dist', html=True), name='viewer')

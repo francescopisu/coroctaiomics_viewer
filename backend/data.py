@@ -5,6 +5,7 @@ import json
 import os
 import hashlib
 import re
+from functools import lru_cache
 from pathlib import Path
 import nibabel as nib
 import numpy as np
@@ -16,21 +17,51 @@ CASE_INTERPRETATION = ('CPE is a lumen-excluded radiomic sampling region, not a 
                        'Voxelwise feature maps are not local event-risk predictions.')
 LPS_FROM_RAS = np.diag([-1., -1., 1., 1.])
 
-def read_case_config():
-    path = Path(os.environ.get("CORONARY_CASE_CONFIG", ROOT / "config/case.local.json"))
-    conf = json.loads(path.read_text())
+@lru_cache(maxsize=4096)
+def _read_json(path,modified,size):
+    return json.loads(Path(path).read_text())
+
+def read_json(path):
+    stat=path.stat()
+    return _read_json(str(path),stat.st_mtime_ns,stat.st_size)
+
+def validate_case_config(conf):
     pid = str(conf['patientId'])
     if not re.fullmatch(r'[A-Za-z0-9_-]+',pid):
         raise ValueError('patientId must be a single case identifier')
     return {**conf,'patientId':pid}
 
-def configuration_key():
-    conf = read_case_config()
+def catalog_configurations():
+    override = os.environ.get('CORONARY_CATALOG_CONFIG')
+    path = Path(override or ROOT/'config/catalog.local.json')
+    if not override and (os.environ.get('CORONARY_CASE_CONFIG') or not path.is_file()):
+        conf = read_case_config()
+        return {conf['patientId']:conf}
+    entries = read_json(path)['cases']
+    cases = {}
+    for entry in entries:
+        source = Path(entry)
+        if not source.is_absolute():source=path.parent/source
+        conf=validate_case_config(read_json(source))
+        if conf['patientId'] in cases:raise ValueError('Duplicate patient ID in case catalogue')
+        cases[conf['patientId']]=conf
+    return cases
+
+def read_case_config(case_id=None):
+    if case_id is not None:
+        cases=catalog_configurations()
+        if case_id not in cases:raise LookupError('Patient is not in the case catalogue')
+        return cases[case_id]
+    path = Path(os.environ.get("CORONARY_CASE_CONFIG", ROOT / "config/case.local.json"))
+    return validate_case_config(read_json(path))
+
+def configuration_key(conf=None):
+    conf = read_case_config() if conf is None else conf
     defaults = Path(conf['pipelineRoot'])/'config/defaults.py'
     return hashlib.sha256(json.dumps([conf,defaults.read_text()],sort_keys=True).encode()).hexdigest()
 
-def configuration():
-    conf = read_case_config()
+def configuration(conf=None):
+    conf = dict(read_case_config() if conf is None else conf)
     defaults_path = Path(conf["pipelineRoot"]) / "config/defaults.py"
     # Parse literal assignments without importing torch, yacs, or pipeline side effects.
     values = {}
@@ -54,7 +85,7 @@ def configuration():
     conf["cpeLengthMm"] = values["_C.PERILUMINAL_EXTRACTION.LENGTH"]
     conf["skipMm"] = values["_C.PERILUMINAL_EXTRACTION.SKIP_MM"]
     out, pid = Path(conf["outputRoot"]), conf["patientId"]
-    if out.name != pid:
+    if out.name != pid and not (out.name == 'output' and out.parent.name == pid):
         raise ValueError(f'outputRoot case {out.name} does not match patientId {pid}')
     ct_id = re.fullmatch(r'(\d+)\.nii(?:\.gz)?',Path(conf['ct']).name)
     if ct_id and ct_id[1] != pid:
@@ -71,7 +102,7 @@ def configuration():
         paths[f"line_{vessel}"] = out / names["labeling"] / filename
         paths[f"markup_{vessel}"] = paths[f"line_{vessel}"].with_suffix(".mrk.json")
     from .features import discover_maps
-    conf['featureFiles']=discover_maps(conf.get('radiomicFeatureMaps'))
+    conf['featureFiles']=discover_maps(conf.get('radiomicFeatureMaps'),pid)
     for entries in conf['featureFiles'].values():
         for entry in entries:paths['feature_'+entry['id']]=Path(entry['path'])
     missing = [str(p) for p in paths.values() if not p.is_file()]

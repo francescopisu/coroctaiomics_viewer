@@ -7,12 +7,27 @@ from .display import display_mask
 
 VESSELS=('LAD','LCx','RCA')
 
-def discover_maps(root):
+def discover_maps(root,patient_id=None):
     result={v:[] for v in VESSELS}
     if not root:return result
     root=Path(root).expanduser()
     if not root.is_dir():raise FileNotFoundError(f'Radiomic feature-map folder not found: {root}')
     folders={p.name.casefold():p for p in root.iterdir() if p.is_dir()}
+    flat=sorted(p for p in root.glob('*.nii.gz') if not p.name.startswith('._'))
+    if flat:
+        if any(name in folders for name in ('lad','lm-lad','lcx','rca')):
+            raise ValueError('Ambiguous mixture of flat and vessel-folder feature maps')
+        if not patient_id:raise ValueError('Flat feature maps require an explicit patient ID')
+        for path in flat:
+            prefix=f'{patient_id}_'
+            if not path.name.startswith(prefix):raise ValueError('Feature-map patient prefix does not match the configured case')
+            vessel,separator,name=path.name[len(prefix):-7].partition('_')
+            vessel={'LAD':'LAD','LCX':'LCx','RCA':'RCA'}.get(vessel.upper())
+            if not vessel or not separator or not name:raise ValueError('Expected patient_vessel_feature.nii.gz map filenames')
+            if any(entry['name']==name for entry in result[vessel]):raise ValueError(f'Duplicate feature map for {vessel}/{name}')
+            identifier=vessel+'-'+hashlib.sha256(name.encode()).hexdigest()[:16]
+            result[vessel].append({'id':identifier,'name':name,'path':str(path)})
+        return result
     for vessel in VESSELS:
         aliases=('lad','lm-lad') if vessel=='LAD' else (vessel.casefold(),)
         matches=[folders[a] for a in aliases if a in folders]
