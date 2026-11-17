@@ -360,3 +360,95 @@ Before the demo, run the Windows checks under the **actual standard user** and
 test P001's 3D rendering, both rotating CPRs, linked slices, radiomic maps and AI,
 then repeat with the network disconnected. A successful Mac preview does not
 verify Windows DLL loading, execution policy or the target GPU/browser.
+
+
+### One-command case preparation and portable export
+
+Edit **`config/prepare.local.json`** and run, from `coronary_viewer`:
+
+```sh
+./prepare.sh
+```
+
+The current file registers and processes **96, 814 and 893**, using the full
+`df_der_no_hf.csv` clinical dataframe, their pipeline output folders and their
+`radiomics_r4_iso/maps` directories. This command prepares viewer assets from
+existing segmentation/centerline/radiomics outputs; it does not run the cluster
+segmentation or feature-extraction pipeline.
+
+The file has shared `pipelineRoot`, `outputRoot`, `ctRoots`, `clinicalCsv` and
+`exportDirectory` paths, plus a `cases` list. With the same dataset layout and
+clinical table, adding another case only requires adding its patient ID:
+
+```json
+{"patientId": "1234"}
+```
+
+For exceptional layouts, an entry can override `ct`, `ctRoots`, `outputRoot`,
+`clinicalCsv`, `pipelineRoot`, `radiomicFeatureMaps`, `ascendingAorta` or
+`centerlineFiles`. For example:
+
+```json
+{
+  "patientId": "1234",
+  "ct": "/path/to/1234.nii.gz",
+  "outputRoot": "/path/to/pipeline/1234",
+  "radiomicFeatureMaps": "/path/to/pipeline/1234/radiomics_r4_iso/maps",
+  "centerlineFiles": {
+    "LAD": "1234_LAD_2.csv",
+    "LCx": "1234_LCx_1.csv",
+    "RCA": "1234_RCA_1.csv"
+  }
+}
+```
+
+Relative paths in the batch file are resolved against `coronary_viewer`, so
+running the shell script from another directory has the same result. The script
+uses `.venv/bin/python`; `CORONARY_PYTHON` can select an existing alternative
+viewer environment. No Conda activation is required.
+
+The command checks all requested cases before registration: unique patient IDs,
+source files, one unambiguous CCTA and labelled centerline per vessel, the
+matching clinical row, eight scalar features, KVP and adjusted-model inputs.
+CT discovery checks the root itself and its immediate dataset subfolders. The
+map directory defaults to `<outputRoot>/radiomics_r4_iso/maps`. Multiple CTs or
+anatomical branches require explicit paths; the script never picks one by
+length or filename ordering.
+
+It writes `config/cases/<id>.json` and allowlisted `config/patients/<id>.json`
+records, appends cases to the existing catalogue, then performs geometry checks,
+prepares meshes/volumes/maps, computes the saved model predictions and exports
+**`releases/patients/<id>.cctacase`**. The generated patient record contains
+only model/reporting fields; outcomes, follow-up and unrelated dataframe columns
+are discarded. Missing values remain missing. Stored clinical likelihoods are
+used as supplied, without recalculation or age/category extrapolation.
+
+For existing derivation/validation patients, `aiRecord` enriches clinical
+reporting while preserving the exact frozen prediction inputs and original
+cohort membership. If the requested CSV has a different scalar feature, KVP,
+RF-CL or SS45 value from the frozen record, preparation stops for review.
+External IDs use only their allowlisted input record and never enter the
+reference cohort. No coefficients, thresholds, reference distributions or
+cohort source data are refitted/edited.
+
+Useful variants:
+
+```sh
+./prepare.sh --check-only        # Read-only input/discovery checks
+./prepare.sh --case 96           # Process/export only one configured case
+./prepare.sh --skip-export       # Prepare only for the Mac viewer
+./prepare.sh /path/to/batch.json # Use a different batch path file
+```
+
+Unchanged JSON files and prepared caches are reused. A matching existing export
+is reused too. If case data/report change, a version-suffixed package is written
+instead of overwriting the previous export. Each run writes a summary to
+`releases/patients/prepare-report.json`; if one case fails, remaining cases are
+attempted and the command exits nonzero with a per-case summary. Generated case
+and patient JSONs are managed by the batch configuration, so make lasting path
+changes in the batch file rather than those generated files.
+
+Transfer the resulting `.cctacase` files to Windows and use **Import patient**.
+The existing Windows application supports them without rebuilding or admin
+permissions. The original duplicate-ID protection still applies to previously
+imported patients.

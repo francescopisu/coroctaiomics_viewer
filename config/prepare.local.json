@@ -1,0 +1,12 @@
+{
+  "pipelineRoot": "/Users/francescopisu/Workspace/Research/Projects/CoroCTAiomics/working_solution/coroctaiomics",
+  "outputRoot": "/Volumes/X9Pro/output/CoroCTAiomics/v2",
+  "ctRoots": ["/Volumes/X9Pro/datasets/CoroCTAiomics_final_export"],
+  "clinicalCsv": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/output_no_MI_all_rad/analysis_checkpoints/20261103T104302Z_9f691260/df_der_no_hf.csv",
+  "exportDirectory": "releases/patients",
+  "cases": [
+    {"patientId": "96"},
+    {"patientId": "814"},
+    {"patientId": "893"}
+  ]
+}

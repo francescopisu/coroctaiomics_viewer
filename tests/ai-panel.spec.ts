@@ -24,7 +24,7 @@ test('AI results use the configured patient, switch details and preserve reconst
   const data=await response.json() as AiResults;
   expect(data.patientId).toBe(current.patientId);expect(data.features).toHaveLength(8);
   expect(JSON.stringify(data)).not.toContain('/Volumes/');
-  expect((await request.get('/api/cases/96/ai')).status()).toBe(404);
+  expect((await request.get('/api/cases/not-in-catalog/ai')).status()).toBe(404);
   expect((await request.get('/cache/ai/reference.json')).status()).toBe(404);
   expect((await request.get(`/api/cases/${current.patientId}/assets/reference.json`)).status()).toBe(404);
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));

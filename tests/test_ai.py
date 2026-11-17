@@ -157,7 +157,7 @@ class AiReferenceTests(unittest.TestCase):
         self.assertNotIn('distributions', body)
         self.assertNotIn('/Volumes/', response.body.decode())
         with self.assertRaises(HTTPException) as error:
-            server.get_ai('96')
+            server.get_ai('not-in-catalog')
         self.assertEqual(error.exception.status_code, 404)
 
 

@@ -1,0 +1,13 @@
+{
+  "patientId": "96",
+  "pipelineRoot": "/Users/francescopisu/Workspace/Research/Projects/CoroCTAiomics/working_solution/coroctaiomics",
+  "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/1_500/96.nii.gz",
+  "outputRoot": "/Volumes/X9Pro/output/CoroCTAiomics/v2/96",
+  "centerlineFiles": {
+    "LAD": "96_LAD_1.csv",
+    "LCx": "96_LCx_3.csv",
+    "RCA": "96_RCA_1.csv"
+  },
+  "radiomicFeatureMaps": "/Volumes/X9Pro/output/CoroCTAiomics/v2/96/radiomics_r4_iso/maps",
+  "aiRecord": "config/patients/96.json"
+}

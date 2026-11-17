@@ -138,6 +138,11 @@ def patient_record(patient_id, data, case_config=None):
             case_config = read_case_config(patient_id)
         except LookupError:
             case_config = None
+    if case_config and case_config.get('aiRecord'):
+        if case_config.get('aiInput'):
+            raise ValueError('Choose aiRecord or aiInput for this case, not both.')
+        from .external_ai import load_patient_record
+        return load_patient_record(case_config, data['models']['pri']['features'], data['patients'].get(patient_id))
     if case_config and case_config.get('aiInput'):
         if patient_id in data['patients']:
             raise ValueError('External AI input conflicts with an existing cohort patient ID.')

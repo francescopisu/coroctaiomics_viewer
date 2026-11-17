@@ -31,6 +31,29 @@ def local_path(value):
     return path if path.is_absolute() else ROOT/path
 
 
+def load_patient_record(conf, features, cohort_record=None):
+    """Allowlisted wide-CSV export, with frozen model-input checks for cohort IDs."""
+    metadata = read_json(local_path(conf['aiRecord']))
+    if not isinstance(metadata, dict) or metadata.get('patientId') != conf['patientId']:
+        raise ValueError('Patient record does not match the configured case.')
+    record = {name: numeric(metadata.get(name), name) for name in (*NUMERIC, *features)}
+    record.update({name: str(metadata[name]).strip() or None if metadata.get(name) is not None else None
+                   for name in CLINICAL})
+    if cohort_record is not None:
+        model_inputs = (*features, 'KVP', 'Clinical Likelihood', 'SS45')
+        for name in model_inputs:
+            expected, actual = cohort_record.get(name), record.get(name)
+            same = expected == actual
+            if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
+                same = bool(np.isclose(expected, actual, rtol=1e-10, atol=1e-12))
+            if not same:
+                raise ValueError(f'{conf["patientId"]}: {name} differs from the frozen cohort record. '
+                                 'Review the patient/source selection; model inputs will not be overwritten.')
+        # Preserve exact frozen prediction inputs. Reporting fields may be enriched.
+        return {**cohort_record, **{key: value for key, value in record.items() if key not in model_inputs}}
+    return {**record, 'sourceCohort': 'external'}
+
+
 @lru_cache(maxsize=8)
 def _read_csv(path, modified, size):
     with open(path, newline='') as file:
