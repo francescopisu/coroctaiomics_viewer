@@ -452,3 +452,56 @@ Transfer the resulting `.cctacase` files to Windows and use **Import patient**.
 The existing Windows application supports them without rebuilding or admin
 permissions. The original duplicate-ID protection still applies to previously
 imported patients.
+
+### Italian teaching mode (Mac)
+
+Run the existing compiled viewer with the educational workflow:
+
+```sh
+./start.sh --mode teaching
+```
+
+Use `--port 8001` if another viewer is running on port 8000. `--no-browser`
+starts only the local server. `./start.sh` (or `--mode normal`) retains the
+ordinary patient list and viewer. After source/UI edits, run `npm run build`;
+changes to the teaching JSON alone need no build. Restart the backend once when
+switching to this version of the code.
+
+All lesson settings are in **`config/teaching.local.json`**:
+
+- `passwords.takeCharge`: first gate, initially `1234`.
+- `passwords.ai`: AI gate, initially `0000`.
+- `cases`: the explicitly selected lessons, currently A-001 → 96, B-002 → 814,
+  C-003 → 893. Only anonymous codes appear on the initial page.
+- Each case has `displayName` (a fictional name), `indication`, optional
+  `riskFactors`/`clinicalProfile` text overrides, `correctChoice` and
+  `followUpText`. Null text overrides generate Italian text from the stored
+  clinical record. Unknown values remain unknown. Clinical likelihood is
+  displayed as recorded; no clinical inputs or models are recalculated here.
+- `choices`: exactly three management options with stable IDs `1`, `2`, `3`.
+  Set each case's `correctChoice` to the corresponding ID, e.g. `"2"`.
+- `correctFeedback` and `incorrectFeedback` customize the decision feedback.
+
+Names, indications, answer keys and follow-up messages are deliberately left
+as editable placeholders in the supplied lessons. A null `correctChoice`
+produces “Risposta didattica da configurare”, rather than inventing a correct
+management choice. Follow-up text is supplied by the teacher; it is never
+inferred from PRI predictions. Return to the list and reopen the case after
+editing its text to reload the configuration.
+
+The flow is anonymous list → Italian anamnesis → “Prendi in carico” password →
+anatomy-only viewer → “Approfondisci con AI” password → CPE volume, masks/maps
+and a red-outlined AI button. Management stays disabled until the AI report has
+opened successfully. The user selects and confirms a management option, then
+“Mostra prognosi” compares it with the configured key and displays the follow-up.
+“Ricomincia” releases the viewer and clears the teaching session. Teaching cases
+start fresh and neither restore nor overwrite the normal viewer's saved state.
+
+These are **didactic password gates**, not clinical authentication or a security
+boundary for the underlying local APIs. The standard viewer's imaging and model
+calculations remain unchanged.
+
+The Windows builder has been updated to include the teaching module/config and
+provide `Start Teaching.cmd` for the next release. No Windows ZIP is regenerated
+by implementing or starting the Mac mode. Rebuild the Windows release only after
+reviewing the interface and filling the lesson configuration.

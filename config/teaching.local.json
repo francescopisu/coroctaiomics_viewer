@@ -1,0 +1,15 @@
+{
+  "passwords": {"takeCharge": "1234", "ai": "0000"},
+  "correctFeedback": "Scelta corretta, a discrezione del medico!",
+  "incorrectFeedback": "Scelta errata!",
+  "choices": [
+    {"id": "1", "label": "Mantenere uno stile di vita sano e proseguire con i regolari controlli di prevenzione"},
+    {"id": "2", "label": "Aumentare la frequenza dei controlli cardiologici e intervenire in modo più deciso sui fattori di rischio"},
+    {"id": "3", "label": "Avviare una terapia farmacologica intensiva e programmare ulteriori accertamenti a breve termine"}
+  ],
+  "cases": [
+    {"patientId": "96", "code": "A-001", "displayName": "[Nome fittizio da configurare]", "indication": "[Motivo dell’esame da configurare]", "riskFactors": null, "clinicalProfile": null, "correctChoice": null, "followUpText": "[Inserire qui il follow-up a quattro anni del caso A-001.]"},
+    {"patientId": "814", "code": "B-002", "displayName": "[Nome fittizio da configurare]", "indication": "[Motivo dell’esame da configurare]", "riskFactors": null, "clinicalProfile": null, "correctChoice": null, "followUpText": "[Inserire qui il follow-up a quattro anni del caso B-002.]"},
+    {"patientId": "893", "code": "C-003", "displayName": "[Nome fittizio da configurare]", "indication": "[Motivo dell’esame da configurare]", "riskFactors": null, "clinicalProfile": null, "correctChoice": null, "followUpText": "[Inserire qui il follow-up a quattro anni del caso C-003.]"}
+  ]
+}

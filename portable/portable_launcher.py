@@ -15,6 +15,8 @@ def main():
     parser.add_argument('--data-dir', type=Path, help='Override per-user patient storage.')
     parser.add_argument('--no-browser', action='store_true')
     parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--mode', choices=['normal','teaching'], default='normal')
+    parser.add_argument('--teaching-config', type=Path)
     parser.add_argument('--import-patient', type=Path, help='Import a prepared patient package and exit.')
     parser.add_argument('--check', action='store_true', help='Check native dependencies and application without starting a server.')
     args = parser.parse_args()
@@ -24,6 +26,8 @@ def main():
     storage = (args.data_dir or Path(os.environ.get('CORONARY_PORTABLE_HOME', base/'CoroCTAiomics'))).resolve()
     # The bundled ._pth isolates imports; external Python installations are irrelevant.
     os.environ['CORONARY_PORTABLE_HOME'] = str(storage)
+    os.environ['CORONARY_MODE'] = args.mode
+    if args.teaching_config:os.environ['CORONARY_TEACHING_CONFIG'] = str(args.teaching_config.resolve())
     os.environ.pop('CORONARY_CASE_CONFIG', None)
     os.environ.pop('CORONARY_CATALOG_CONFIG', None)
     os.environ.pop('CORONARY_AI_CONFIG', None)

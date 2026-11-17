@@ -29,7 +29,7 @@ function Hazard({hazard,model}:{hazard:FeatureHazard;model:AiModel}){
   </span></span>;
 }
 
-export function AiPanel({patientId,open,onClose,onSelectFeature,selectedFeature,maps}:{patientId:string;open:boolean;onClose:()=>void;onSelectFeature:(feature:AiFeature)=>void;selectedFeature?:string;maps:Case['featureMaps']}){
+export function AiPanel({patientId,patientLabel,onConsulted,open,onClose,onSelectFeature,selectedFeature,maps}:{patientId:string;patientLabel?:string;onConsulted?:()=>void;open:boolean;onClose:()=>void;onSelectFeature:(feature:AiFeature)=>void;selectedFeature?:string;maps:Case['featureMaps']}){
   const [result,setResult]=useState<AiResults>(),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   const [tab,setTab]=useState<typeof tabs[number]>('Patient'),[model,setModel]=useState<AiModel>('pri');
   const close=useRef<HTMLButtonElement>(null),panel=useRef<HTMLElement>(null);
@@ -45,13 +45,14 @@ export function AiPanel({patientId,open,onClose,onSelectFeature,selectedFeature,
     return()=>abort.abort();
   },[patientId,open,retry]);
   useEffect(()=>{if(open)close.current?.focus();},[open]);
+  useEffect(()=>{if(open&&result)onConsulted?.();},[open,result,onConsulted]);
   if(!open)return null;
   const patient=result?.patient;
   const priPercentile=result?.priReference?.percentile;
   const marker=priPercentile??(result?.stratum==='Low'?12.5:result?.stratum==='Intermediate'?50:87.5);
   const chooseTab=(index:number)=>{setTab(tabs[index]);requestAnimationFrame(()=>panel.current?.querySelectorAll<HTMLButtonElement>('[role=tab]')[index]?.focus());};
   return <aside id="ai-results" className={`ai-panel${tab==='Features'?' ai-panel-features':''}`} ref={panel} role="dialog" aria-modal="false" aria-labelledby="ai-title" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();onClose();}}}>
-    <div className="ai-heading"><h2 id="ai-title">AI</h2><span title={result?`Patient record: ${result.sourceCohort} dataset. Model revision ${result.modelRevision}`:undefined}>Patient {patientId}</span><button ref={close} aria-label="Close AI results" onClick={onClose}>×</button></div>
+    <div className="ai-heading"><h2 id="ai-title">AI</h2><span title={result?`Patient record: ${result.sourceCohort} dataset. Model revision ${result.modelRevision}`:undefined}>{patientLabel?`Caso ${patientLabel}`:`Patient ${patientId}`}</span><button ref={close} aria-label="Close AI results" onClick={onClose}>×</button></div>
     {!result?<div className="ai-status" role={error?'alert':'status'}>{error||'Loading AI results…'}{error&&<button onClick={()=>setRetry(n=>n+1)}>Retry</button>}</div>:<>
       <div className="ai-horizon">{number(result.horizonMonths/12)}-year MACE</div>
       <div className="ai-metrics">

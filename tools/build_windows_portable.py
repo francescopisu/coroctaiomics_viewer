@@ -134,11 +134,13 @@ def build(args):
         # Absolute host paths and user-site packages never enter this path file.
         (runtime/'python313._pth').write_text(
             'python313.zip\n.\nLib/site-packages\n../application\nimport site\n', encoding='utf-8')
-        for name in ('__init__.py', 'data.py', 'ai.py', 'server.py', 'portable.py'):
+        for name in ('__init__.py', 'data.py', 'ai.py', 'server.py', 'portable.py', 'teaching.py'):
             shutil.copy2(ROOT/'backend'/name, application/'backend'/name)
         shutil.copytree(ROOT/'dist', application/'dist')
         shutil.copy2(ROOT/'portable/portable_launcher.py', application/'portable_launcher.py')
-        for name in ('Start Viewer.cmd', 'Check Installation.cmd'):
+        (application/'config').mkdir()
+        shutil.copy2(ROOT/'config/teaching.local.json', application/'config/teaching.local.json')
+        for name in ('Start Viewer.cmd', 'Check Installation.cmd', 'Start Teaching.cmd'):
             # cmd.exe gets CRLF even when the distribution is built on macOS.
             (stage/name).write_bytes((ROOT/'portable'/name).read_text().replace('\r\n', '\n').replace('\n', '\r\n').encode('utf-8'))
         shutil.copy2(ROOT/'portable/WINDOWS_README.txt', stage/'READ ME FIRST.txt')

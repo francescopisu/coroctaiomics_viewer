@@ -136,8 +136,40 @@ def get_feature_axial(case_id:str,feature_id:str,index:int):
 @app.get('/api/runtime')
 def get_runtime():
     from .portable import enabled
-    return JSONResponse({'application':'CoroCTAiomics','portable':enabled(),'canImportPatients':enabled()},
+    from .teaching import enabled as teaching_enabled
+    return JSONResponse({'application':'CoroCTAiomics','portable':enabled(),'canImportPatients':enabled(),
+                         'mode':'teaching' if teaching_enabled() else 'normal'},
                         headers={'Cache-Control':'no-store'})
+
+
+@app.get('/api/teaching')
+def teaching_listing():
+    from .teaching import listing
+    return JSONResponse(listing(), headers={'Cache-Control':'no-store'})
+
+
+@app.get('/api/teaching/{code}')
+def teaching_profile(code: str):
+    from .teaching import profile
+    return JSONResponse(profile(code), headers={'Cache-Control':'no-store'})
+
+
+@app.post('/api/teaching/{code}/open')
+def teaching_open(code: str, payload: dict):
+    from .teaching import unlock
+    return JSONResponse(unlock(code, payload.get('password',''), 'takeCharge'), headers={'Cache-Control':'no-store'})
+
+
+@app.post('/api/teaching/{code}/ai')
+def teaching_ai(code: str, payload: dict):
+    from .teaching import unlock
+    return JSONResponse(unlock(code, payload.get('password',''), 'ai'), headers={'Cache-Control':'no-store'})
+
+
+@app.post('/api/teaching/{code}/prognosis')
+def teaching_prognosis(code: str, payload: dict):
+    from .teaching import prognosis
+    return JSONResponse(prognosis(code, payload.get('choice')), headers={'Cache-Control':'no-store'})
 
 
 @app.post('/api/patients/import')

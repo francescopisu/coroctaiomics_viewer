@@ -16,13 +16,17 @@ import {AiPanel} from './AiPanel';
 import type {AiFeature} from './aiTypes';
 import {restoreView,saveView} from './viewState';
 import {attenuationBands} from './cpeVolumeData';
+import type {TeachingViewerState} from './teachingTypes';
 
 const initial:Controls={render3d:'cpe',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.15,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:true,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:true,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
-export default function App({patientId,onBack}:{patientId:string;onBack:()=>void}){
-  const [data,setData]=useState<Case>(),[c,setC]=useState(()=>restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
+export default function App({patientId,onBack,teaching}:{patientId:string;onBack:()=>void;teaching?:TeachingViewerState}){
+  const teachingLocked=!!teaching&&!teaching.aiUnlocked;
+  const [data,setData]=useState<Case>(),[storedControls,setC]=useState<Controls>(()=>teaching?{...initial,render3d:'anatomy',cpeVisible:false,centerline:false}:restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
+  const c:Controls=useMemo(()=>teachingLocked?{...storedControls,render3d:'anatomy',cpeVisible:false,cpe:{LAD:false,LCx:false,RCA:false},featureIds:{LAD:'',LCx:'',RCA:''},context:false}:storedControls,[storedControls,teachingLocked]);
+  useEffect(()=>{if(teaching?.aiUnlocked)setC(old=>({...old,render3d:'cpe',cpeVisible:true,cpe:{LAD:true,LCx:true,RCA:true},centerline:true}));},[teaching?.aiUnlocked]);
   const latestControls=useRef(c);latestControls.current=c;
-  useEffect(()=>()=>saveView(patientId,latestControls.current),[patientId]);
-  useEffect(()=>{const timer=window.setTimeout(()=>saveView(patientId,c),250);return()=>clearTimeout(timer);},[patientId,c]);
+  useEffect(()=>()=>{if(!teaching)saveView(patientId,latestControls.current);},[patientId,!!teaching]);
+  useEffect(()=>{if(teaching)return;const timer=window.setTimeout(()=>saveView(patientId,c),250);return()=>clearTimeout(timer);},[patientId,c,!!teaching]);
   const [bootPercent,setBootPercent]=useState(0),[bootDone,setBootDone]=useState(false),[downloads]=useState(()=>new InitialProgress(setBootPercent));
   const [loaded,setLoaded]=useState<{data:Case;volumes:Record<Vessel,Volume>}>(),[nativeAxial,setNativeAxial]=useState<AxialVolume>();
   const [featureCache,setFeatureCache]=useState<{data:Case;cache:ResourceCache<FeatureVolume>}>(),[,refreshFeatures]=useState(0);
@@ -76,7 +80,7 @@ export default function App({patientId,onBack}:{patientId:string;onBack:()=>void
   useEffect(()=>{recon.current?.setVolume(volume);recon.current?.setFeature(feature);if(volume)recon.current?.update(imagingControls);},[feature,volume,imagingControls]);
   useEffect(()=>{scene.current?.update(c,plane);},[c,plane,ready]);
   useEffect(()=>{scene.current?.setNativeStack(nativeAxial);},[nativeAxial,ready]);
-  const startupComplete=ready&&!!volume&&!!axialPlane&&(volumeStatus.phase==='ready'||volumeStatus.phase==='error')&&!error;
+  const startupComplete=ready&&!!volume&&!!axialPlane&&(c.render3d!=='cpe'||volumeStatus.phase==='ready'||volumeStatus.phase==='error')&&!error;
   useEffect(()=>{
     if(bootDone||!startupComplete)return;let second=0,timer=0;
     const first=requestAnimationFrame(()=>{second=requestAnimationFrame(()=>{
@@ -94,16 +98,21 @@ export default function App({patientId,onBack}:{patientId:string;onBack:()=>void
   };
   return <><main inert={!bootDone&&!error} aria-busy={(!bootDone&&!error)||!!featureInfo&&!feature}>
     <header className="toolbar" aria-label="Viewer controls">
-      {(bootDone||error)&&<button className="patients-back" onClick={onBack}>← Patients</button>}<span className="viewer-patient" title={`Patient ${patientId}`}>{patientId}</span>
+      {(bootDone||error)&&<button className="patients-back" onClick={onBack}>{teaching?'← Casi clinici':'← Patients'}</button>}<span className="viewer-patient" title={teaching?teaching.name:`Patient ${patientId}`}>{teaching?.code??patientId}</span>
       <select aria-label="Vessel" value={c.vessel} onChange={e=>select(e.target.value as Vessel)}>{vessels.map(v=><option key={v}>{v}</option>)}</select>
-      <select className="feature-select" aria-label="Radiomic feature map" disabled={!availableFeatures.length} value={featureId} onChange={e=>update('featureIds',{...c.featureIds,[c.vessel]:e.target.value})}>
+      <select className="feature-select" aria-label="Radiomic feature map" disabled={teachingLocked||!availableFeatures.length} value={featureId} onChange={e=>update('featureIds',{...c.featureIds,[c.vessel]:e.target.value})}>
         <option value="">{availableFeatures.length?'No feature map':'No feature maps'}</option>{availableFeatures.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
       </select>
       {featureInfo&&<select className="scale-select" aria-label="Feature scale" value={c.featureScale} title="Balanced: 2nd percentile / median / 98th percentile. Raw zero: original sign and symmetric extrema." onChange={e=>update('featureScale',e.target.value as Controls['featureScale'])}><option value="balanced">Balanced</option><option value="raw">Raw zero</option></select>}
       {featureInfo&&scale&&<div className="feature-scale" aria-label="Feature color scale" title={`${featureInfo.name}: ${c.featureScale==='balanced'?'2nd percentile / median / 98th percentile':'raw, zero-centered'}`}><i style={{background:FEATURE_GRADIENT}}/><div>{scale.map((value,i)=><span key={i}>{featureNumber(value)}</span>)}</div></div>}
       {featureInfo&&!feature&&<span className="map-loading">Loading map…</span>}
-      <button className="mask-toggle" aria-label="CPE masks" aria-pressed={c.cpeVisible} onClick={()=>update('cpeVisible',!c.cpeVisible)}>CPE masks</button>
-      <button ref={aiButton} className="ai-toggle" aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!data}>AI</button>
+      <button className="mask-toggle" aria-label="CPE masks" disabled={teachingLocked} aria-pressed={c.cpeVisible} onClick={()=>update('cpeVisible',!c.cpeVisible)}>CPE masks</button>
+      <button ref={aiButton} className={`ai-toggle${teaching?.aiUnlocked?' teaching-ai-highlight':''}`} aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!data||teachingLocked}>AI</button>
+      {teaching&&<>
+        {!teaching.aiUnlocked&&<button className="teaching-unlock" onClick={teaching.onUnlockAi} disabled={!bootDone}>Approfondisci con AI</button>}
+        <button className="teaching-manage" disabled={!teaching.aiConsulted} onClick={teaching.onManage}>{teaching.hasDecision?'Modifica gestione':'Gestione del paziente'}</button>
+        <button className="teaching-prognosis" disabled={!teaching.hasDecision||!teaching.aiConsulted} onClick={teaching.onPrognosis}>Mostra prognosi</button>
+      </>}
       <button onClick={()=>{scene.current?.reset();setC(old=>({...old,curvedAngle:0,straightAngle:0}));}} disabled={!ready}>Reset</button>
       <details className="layers"><summary aria-label="Layers" title="Layers"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M9.5 2h5l.5 3 1.7 1 2.9-1 2.5 4.3-2.3 2v2l2.3 2-2.5 4.3-2.9-1-1.7 1-.5 3h-5l-.5-3-1.7-1-2.9 1-2.5-4.3 2.3-2v-2l-2.3-2L4.4 5l2.9 1L9 5Z"/><circle cx="12" cy="12.3" r="3.2"/></svg></summary><div className="layer-menu">
         <div className="layer-window">
@@ -118,9 +127,9 @@ export default function App({patientId,onBack}:{patientId:string;onBack:()=>void
         <label><input type="checkbox" checked={c.lumen} onChange={e=>update('lumen',e.target.checked)}/>Lumen</label>
         <label className="slider">Opacity<input aria-label="Lumen opacity" type="range" min="0" max="1" step=".01" value={c.lumenOpacity} onChange={e=>update('lumenOpacity',+e.target.value)}/></label>
         <label><input type="checkbox" checked={c.centerline} onChange={e=>update('centerline',e.target.checked)}/>Centerlines</label>
-        {vessels.map(v=><div className="layer-row" key={v}><label><input type="checkbox" checked={c.cpe[v]} onChange={e=>update('cpe',{...c.cpe,[v]:e.target.checked})}/>{v} CPE</label><input type="color" aria-label={`${v} CPE color`} value={c.colors[v]} onChange={e=>update('colors',{...c.colors,[v]:e.target.value})}/></div>)}
-        <label className="slider">CPE opacity<input aria-label="CPE opacity" type="range" min="0" max=".85" step=".01" value={c.cpeOpacity} onChange={e=>update('cpeOpacity',+e.target.value)}/></label>
-        <label className="slider">Map opacity<input aria-label="Feature map opacity" type="range" min="0" max="1" step=".01" value={c.featureOpacity} onChange={e=>update('featureOpacity',+e.target.value)}/></label>
+        {vessels.map(v=><div className="layer-row" key={v}><label><input type="checkbox" disabled={teachingLocked} checked={c.cpe[v]} onChange={e=>update('cpe',{...c.cpe,[v]:e.target.checked})}/>{v} CPE</label><input disabled={teachingLocked} type="color" aria-label={`${v} CPE color`} value={c.colors[v]} onChange={e=>update('colors',{...c.colors,[v]:e.target.value})}/></div>)}
+        <label className="slider">CPE opacity<input disabled={teachingLocked} aria-label="CPE opacity" type="range" min="0" max=".85" step=".01" value={c.cpeOpacity} onChange={e=>update('cpeOpacity',+e.target.value)}/></label>
+        <label className="slider">Map opacity<input disabled={teachingLocked} aria-label="Feature map opacity" type="range" min="0" max="1" step=".01" value={c.featureOpacity} onChange={e=>update('featureOpacity',+e.target.value)}/></label>
         <label><input type="checkbox" checked={c.raw} onChange={e=>update('raw',e.target.checked)}/>CCTA</label>
         <label><input type="checkbox" checked={c.context} onChange={e=>update('context',e.target.checked)}/>3D plane</label>
       </div></details>
@@ -128,13 +137,13 @@ export default function App({patientId,onBack}:{patientId:string;onBack:()=>void
     {error&&<div className="error" role="alert">{error}<button onClick={()=>location.reload()}>Reload</button></div>}
     <div className="workspace">
       <section className="panel overview" aria-label="3D coronary view"><h2>3D</h2>
-        <div className="render3d-controls">
+        {!teachingLocked&&<div className="render3d-controls">
           <details className="volume-settings"><summary aria-label="CPE volume settings">Settings</summary><div className="volume-menu">
             <label>Density<input aria-label="CPE volume density" type="range" min="0" max="2" step=".05" value={c.volumeDensity} onChange={e=>update('volumeDensity',+e.target.value)}/></label>
             {attenuationBands.map(band=><label key={band.id} title={band.range}>{band.label}<input aria-label={`${band.label} opacity`} type="range" min="0" max="2" step=".05" value={c.volumeBands[band.id]} onChange={e=>update('volumeBands',{...c.volumeBands,[band.id]:+e.target.value})}/></label>)}
             <label>Context<input aria-label="CPE anatomical context opacity" type="range" min="0" max="1" step=".05" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
           </div></details>
-        </div>
+        </div>}
         <div className="scene" ref={sceneHost}/>{!ready&&<span className="loading">Loading…</span>}
         {c.render3d==='cpe'&&volumeStatus.phase==='preparing'&&<span className="volume-status" role="status">Preparing CPE volume…</span>}
         {c.render3d==='cpe'&&volumeStatus.phase==='error'&&<div className="volume-status" role="alert">{volumeStatus.message}<button onClick={()=>scene.current?.retryVolume()}>Retry</button></div>}
@@ -156,13 +165,13 @@ export default function App({patientId,onBack}:{patientId:string;onBack:()=>void
         <section className="panel"><h2>Cross-section</h2>{data&&<SliceView kind="cross" onNavigate={i=>update('index',i)} plane={plane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
         <section className="panel"><h2>Axial</h2>{data&&<SliceView kind="axial" onNavigate={i=>setC(old=>navigateAxial(data,old,i))} plane={axialPlane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
       </div>
-      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
+      {data&&<AiPanel key={data.patientId} patientId={data.patientId} patientLabel={teaching?.code} onConsulted={teaching?.onAiConsulted} open={!teachingLocked&&aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
     </div>
   </main>
     {!bootDone&&!error&&<div className={`initial-loader${bootPercent===100?' complete':''}`}>
-      <button className="loader-back" onClick={onBack}>← Patients</button>
+      <button className="loader-back" onClick={onBack}>{teaching?'← Casi clinici':'← Patients'}</button>
       <div className="initial-progress" role="progressbar" aria-label="Loading viewer" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bootPercent}>
-        <div className="initial-progress-patient">Patient {patientId}</div><div className="initial-progress-label"><span>Loading…</span><span>{bootPercent}%</span></div>
+        <div className="initial-progress-patient">{teaching?`Caso ${teaching.code}`:`Patient ${patientId}`}</div><div className="initial-progress-label"><span>{teaching?'Caricamento…':'Loading…'}</span><span>{bootPercent}%</span></div>
         <div className="initial-progress-track"><div style={{width:`${bootPercent}%`}}/></div>
       </div>
     </div>}
