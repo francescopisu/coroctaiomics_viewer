@@ -278,3 +278,85 @@ Screenshot output is under `test-results/`. The viewer has no Export button. `ca
 Display validation also checks native crop sizes, Gaussian speck suppression with lumen-hole preservation, mesh normals/displacement/volume stability, support-normalized interpolation with missing neighbours, balanced/raw palette semantics, aorta visibility, mesh/edge toggles and independent CPE-mask visibility.
 
 A patient-specific on/off audit at standard and Retina pixel densities confirms that the antialiasing toggle is active but often visually subtle. At device scale 2, case-1718 LAD changes about 0.54% of straightened pixels and RCA about 2.94%, with mean maximum-channel differences of 0.0066 and 0.0351 byte levels respectively (W 800 / L 250, straightened angle 6°, default viewport). These are display comparisons, not clinical noise-reduction measurements. Central-column pixels and the curved/orthogonal views are identical. The control is labelled Pixel antialiasing to distinguish it from background denoising or geometric correction.
+
+
+### Portable Windows demonstration package
+
+The existing viewer is preserved on `main` and `freeze/viewer-2026-11-17` at
+`10eb7f5`. Portable work is on `codex/windows-portable`. The standard Mac workflow
+and its preparation/configuration checks remain available outside portable mode.
+
+This package targets **Windows 10/11, Intel/AMD x64** and is assembled on the Mac
+using official embedded CPython 3.13.17 and pinned Windows wheels. It includes the
+compiled frontend and a small runtime (NumPy, FastAPI, Uvicorn and dependencies).
+It does not install Python, Conda, Node, system services, registry entries or
+packages on the target PC. Graphics drivers and local execution policies remain
+properties of the target machine.
+
+Export an already prepared patient on the Mac, with the source drive available
+for external scalar radiomics inputs and the validated AI reference prepared:
+
+```sh
+.venv/bin/python -m backend.export_patient --case P001 --output releases/P001.cctacase
+```
+
+The export contains all listed imaging assets, native axial arrays and the
+patient's frozen AI response, including both probabilities, PRI percentile,
+feature/cohort references and model revision. It never includes source paths,
+source NIfTI files, model pickles or all-patient reference records. No model is
+refitted. `--without-ai` is an explicit imaging-only export. Export refuses to
+replace an existing output file and aborts if prepared assets/configuration
+change while packing. Each payload has a SHA-256 checksum; checksums detect
+corruption and are not a publisher signature.
+
+Assemble the Windows distribution (downloads official Windows binaries; no
+Windows compiler or Windows machine is required for assembly):
+
+```sh
+.venv/bin/python tools/build_windows_portable.py --patient releases/P001.cctacase
+```
+
+The output is `releases/CoroCTAiomics-Windows-x64.zip`. Downloaded binaries are
+cached in `.portable-build/downloads`; `--offline --skip-frontend` can repeat the
+assembly without network access once downloads and the frontend are ready.
+Choose a new `--output` directory for later builds: existing releases are
+preserved. `build-info.json` records the Python archive URL/checksum, locked
+wheel checksums and application-file checksums. Third-party licenses remain in
+the runtime and wheel metadata. The embedded interpreter's isolated `._pth`
+references only its own standard library, bundled dependencies and application.
+
+On Windows, extract the **entire ZIP**, run `Check Installation.cmd`, then
+`Start Viewer.cmd`. The initial P001 package is imported once before opening the
+browser. Keep the console open; Ctrl+C stops the loopback-only server. The default
+port is 8765, with a free-port fallback if occupied. No remote network interface
+is bound. Application data live in the current Windows user's
+`%LOCALAPPDATA%/CoroCTAiomics`, so upgrading the application folder preserves
+patients. The actual demonstration user needs write access to that directory.
+The console and `viewer.log` there record errors. Full instructions are in
+`portable/WINDOWS_README.txt` and the ZIP's `READ ME FIRST.txt`.
+
+The portable Patients page has **Import patient**. Import another workstation-
+exported `.cctacase` file to add a patient immediately, without rebuilding,
+restarting, editing JSON or requesting administrator permissions. Imports stream
+to disk, check inventories/checksums/identity/URLs and stage files before atomic
+catalogue publication. ZIP traversal, symlinks, Windows device names,
+case-insensitive duplicate IDs, wrong-patient AI reports and mixed-patient URLs
+are rejected. Existing patients are never overwritten. Import is enabled only
+in portable mode and requires a same-origin local request. Ordinary development
+mode remains read-only. The portable application reads the frozen AI report;
+clinical changes and updated reports are prepared/exported on the workstation.
+Replacing an already imported patient ID is intentionally unsupported in this
+initial release.
+
+To preview the assembled application with the Mac interpreter (this does **not**
+execute or validate Windows binaries):
+
+```sh
+.venv/bin/python releases/CoroCTAiomics-Windows-x64/application/portable_launcher.py --check --data-dir .portable-data
+.venv/bin/python releases/CoroCTAiomics-Windows-x64/application/portable_launcher.py --data-dir .portable-data
+```
+
+Before the demo, run the Windows checks under the **actual standard user** and
+test P001's 3D rendering, both rotating CPRs, linked slices, radiomic maps and AI,
+then repeat with the network disconnected. A successful Mac preview does not
+verify Windows DLL loading, execution policy or the target GPU/browser.

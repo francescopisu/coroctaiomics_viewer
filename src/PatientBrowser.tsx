@@ -7,6 +7,8 @@ const percent=(n:number|null)=>n==null?'—':`${(n*100).toFixed(1)}%`;
 let rememberedScroll=0;
 export function PatientBrowser({url,onNavigate,onQuery}:{url:string;onNavigate:(url:string)=>void;onQuery:(url:string)=>void}){
   const [rows,setRows]=useState<PatientSummary[]>(),[error,setError]=useState(''),[revision,setRevision]=useState(0);
+  const [canImport,setCanImport]=useState(false),[importing,setImporting]=useState(false),[importError,setImportError]=useState(''),[importMessage,setImportMessage]=useState('');
+  const packageInput=useRef<HTMLInputElement>(null);
   const scroll=useRef<HTMLDivElement>(null),search=useRef<HTMLInputElement>(null);
   const query=new URL(url,location.origin).searchParams,q=query.get('q')??'',stratum=query.get('stratum')??'';
   const sort=(columns.some(([key])=>key===query.get('sort'))?query.get('sort'):'patientId') as SortKey,descending=query.get('order')==='desc';
@@ -18,6 +20,22 @@ export function PatientBrowser({url,onNavigate,onQuery}:{url:string;onNavigate:(
     return()=>abort.abort();
   },[revision]);
   useEffect(()=>{if(rows&&scroll.current)scroll.current.scrollTop=rememberedScroll;},[rows]);
+  useEffect(()=>{
+    const abort=new AbortController();
+    fetch('/api/runtime',{signal:abort.signal,cache:'no-store'}).then(r=>r.ok?r.json():null)
+      .then(value=>setCanImport(value?.canImportPatients===true)).catch(()=>{});
+    return()=>abort.abort();
+  },[]);
+  const importPatient=async(file:File)=>{
+    setImporting(true);setImportError('');setImportMessage(`Importing ${file.name}…`);
+    try{
+      const response=await fetch('/api/patients/import',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
+      const value=await response.json();
+      if(!response.ok)throw new Error(value.detail??'Unable to import patient.');
+      setImportMessage(`Patient ${value.patientId} imported.`);setRevision(n=>n+1);
+    }catch(e){setImportMessage('');setImportError(e instanceof Error?e.message:'Unable to import patient.');}
+    finally{setImporting(false);if(packageInput.current)packageInput.current.value='';}
+  };
   const visible=rows?.filter(p=>p.patientId.toLowerCase().includes(q.trim().toLowerCase())&&(!stratum||p.stratum===stratum)).sort((a,b)=>{
     const value=(p:PatientSummary)=>sort==='stratum'?(p.stratum==null?null:{Low:0,Intermediate:1,High:2}[p.stratum]):sort==='cadRads'?(p.cadRads?Number(p.cadRads.replace('Score ','')):null):p[sort];
     const x=value(a),y=value(b);if(x==null||y==null)return x==null?(y==null?0:1):-1;
@@ -28,8 +46,9 @@ export function PatientBrowser({url,onNavigate,onQuery}:{url:string;onNavigate:(
     <header className="patient-header"><h1>Patients</h1><span>Coronary CCTA</span></header>
     <div className="patient-toolbar"><label className="patient-search"><span aria-hidden="true">⌕</span><input ref={search} type="search" aria-label="Search patient ID" placeholder="Search patient ID" value={q} onChange={e=>setQuery('q',e.target.value)}/></label>
       <select aria-label="Filter risk category" value={stratum} onChange={e=>setQuery('stratum',e.target.value)}><option value="">All risk categories</option>{['Low','Intermediate','High'].map(s=><option key={s}>{s}</option>)}</select>
-      <span className="patient-count" aria-live="polite">{rows?`${visible!.length} of ${rows.length} patients`:''}</span><button onClick={()=>setRevision(n=>n+1)} aria-label="Refresh patients">Refresh</button>
+      <span className="patient-count" aria-live="polite">{rows?`${visible!.length} of ${rows.length} patients`:''}</span>{canImport&&<><input hidden ref={packageInput} type="file" accept=".cctacase,.zip" aria-label="Patient package" onChange={e=>{const file=e.target.files?.[0];if(file)void importPatient(file);}}/><button disabled={importing} onClick={()=>packageInput.current?.click()}>{importing?'Importing…':'Import patient'}</button></>}<button onClick={()=>setRevision(n=>n+1)} aria-label="Refresh patients">Refresh</button>
     </div>
+    {(importError||importMessage)&&<p className="patient-import-status" role={importError?'alert':'status'}>{importError||importMessage}</p>}
     {error?<div className="patient-empty" role="alert">{error}<button onClick={()=>setRevision(n=>n+1)}>Retry</button></div>:!rows?<div className="patient-empty" role="status">Loading patients…</div>:<>
       <div className="patient-table-scroll" ref={scroll} onScroll={e=>{rememberedScroll=e.currentTarget.scrollTop;}}>
         <table className="patient-table" aria-label="Patients"><thead><tr>{columns.map(([key,label])=><th key={key} scope="col" aria-sort={sort===key?(descending?'descending':'ascending'):'none'}><button onClick={()=>{

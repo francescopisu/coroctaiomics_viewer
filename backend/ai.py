@@ -147,6 +147,10 @@ def patient_record(patient_id, data, case_config=None):
 
 
 def results(patient_id):
+    if os.environ.get('CORONARY_PORTABLE_HOME'):
+        read_case_config(patient_id)
+        from .portable import patient_ai
+        return patient_ai(patient_id)
     data = reference()
     record = patient_record(patient_id, data)
     if record is None:
