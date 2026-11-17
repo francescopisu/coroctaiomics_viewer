@@ -7,6 +7,8 @@
   "cases": [
     {"patientId": "96"},
     {"patientId": "814"},
-    {"patientId": "893"}
+    {"patientId": "893"},
+    {"patientId": "213"},
+    {"patientId": "12"}
   ]
 }
