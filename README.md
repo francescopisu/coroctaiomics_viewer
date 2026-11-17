@@ -301,3 +301,11 @@ must be opened once again. Reload the tab after changing case configuration or
 prepared image data to avoid retaining an older in-memory version. Retaining
 three full-resolution sessions uses substantially more RAM/GPU memory than
 one, so warm the actual three cases on the demonstration PC before the session.
+
+First-load binary transfers use gzip level 1 rather than the default level 9.
+Compression remains lossless; native CT resolution, HU and masks are unchanged.
+This reduces CPU blocking in the loopback server during the first case opening.
+Restart the backend after updating this setting. In a fresh headless Chrome
+session on the development Mac (software WebGL, patient 8), complete initial
+opening measured 17.0 seconds before and 7.7 seconds after this change. These
+are local comparative measurements, not a Windows-PC performance guarantee.

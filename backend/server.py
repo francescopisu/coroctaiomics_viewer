@@ -10,7 +10,9 @@ from starlette.middleware.gzip import GZipMiddleware
 from .data import ROOT, read_case_config, configuration_key, CASE_INTERPRETATION, catalog_configurations
 
 app = FastAPI(title='Coronary CPE viewer', docs_url=None, redoc_url=None)
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+# Binary CCTA is streamed over loopback. Level 9 blocks the server's event loop
+# doing expensive compression during case opening for very little size benefit.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=1)
 
 def manifest(case_id,case_config=None):
     try: conf=read_case_config(case_id) if case_config is None else case_config;configured_id=conf['patientId']
