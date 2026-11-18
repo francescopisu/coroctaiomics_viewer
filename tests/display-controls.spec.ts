@@ -13,10 +13,10 @@ test('smooth meshes, aorta, balanced maps and independent CPE mask visibility',a
   await page.screenshot({path:'test-results/smoothed-balanced-aorta.png'});
   await scale.selectOption('raw');expect(await crossImage()).not.toBe(balanced);expect((await page.getByLabel('Curved CPR',{exact:true}).screenshot()).equals(balancedCpr)).toBe(false);
   await expect(page.getByLabel('Feature color scale')).toContainText('0');await scale.selectOption('balanced');expect(await crossImage()).toBe(balanced);
-  const masks=page.getByRole('button',{name:'CPE masks',exact:true});await masks.click();await expect(masks).toHaveAttribute('aria-pressed','false');
+  const masks=page.getByRole('button',{name:'CPE masks',exact:true});await page.getByLabel('Layers',{exact:true}).click();await masks.click();await page.getByLabel('Layers',{exact:true}).click();await expect(masks).toHaveAttribute('aria-pressed','false');
   await expect(selector).toHaveValue(maps[0].id);await expect(page.getByLabel('Feature color scale')).toBeVisible();const mapWithoutMasks=await crossImage();
   await selector.selectOption('');await expect(viewer).toHaveAttribute('aria-busy','false');expect(await crossImage()).not.toBe(mapWithoutMasks);
-  await selector.selectOption(maps[0].id);await expect(viewer).toHaveAttribute('aria-busy','false',{timeout:60000});expect(await crossImage()).toBe(mapWithoutMasks);await masks.click();expect(await crossImage()).toBe(balanced);
+  await selector.selectOption(maps[0].id);await expect(viewer).toHaveAttribute('aria-busy','false',{timeout:60000});expect(await crossImage()).toBe(mapWithoutMasks);await page.getByLabel('Layers',{exact:true}).click();await masks.click();await page.getByLabel('Layers',{exact:true}).click();expect(await crossImage()).toBe(balanced);
   await page.getByLabel('Layers',{exact:true}).click();
   const smoothEdges=page.getByRole('checkbox',{name:'Smooth edges',exact:true});await smoothEdges.uncheck();expect(await crossImage()).not.toBe(balanced);
   await page.getByLabel('Layers',{exact:true}).click();await page.screenshot({path:'test-results/voxel-edges-comparison.png'});await page.getByLabel('Layers',{exact:true}).click();await smoothEdges.check();expect(await crossImage()).toBe(balanced);

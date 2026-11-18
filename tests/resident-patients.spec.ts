@@ -23,10 +23,13 @@ test('three loaded patients reuse their data, canvases and 3D textures when reop
     await page.getByRole('link',{name:`Open patient ${id}`,exact:true}).click();
     await expect(page.locator(`${active} main`)).toHaveAttribute('aria-busy','false');
     await expect(page.locator(active)).toHaveAttribute('data-ready','true');
+    const cpes=page.locator(active).getByRole('button',{name:'Show periluminal envelopes',exact:true});
+    if(await cpes.getAttribute('aria-pressed')==='false')await cpes.click();
     await expect(page.locator(`${active} .scene`)).toHaveAttribute('data-volume-ready','true');
   };
-  const back=()=>page.getByRole('button',{name:'← Patients',exact:true}).click();
+  const back=()=>page.getByRole('link',{name:'Home',exact:true}).click();
   await open('96');
+  await page.locator(active).getByRole('button',{name:'Show radiomic maps',exact:true}).click();
   await page.locator(active).getByLabel('Radiomic feature map',{exact:true}).selectOption('feature-96');
   await expect(page.getByText('Loading map…')).toHaveCount(0);
   const cross=page.getByRole('group',{name:'Orthogonal slice navigation',exact:true});await cross.press('ArrowUp');
@@ -64,7 +67,51 @@ test('leaving an unfinished case cancels it rather than keeping partial data res
   let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
   await page.route('**/api/cases/96/assets/ct',async route=>{await held;await route.fallback().catch(()=>{});});
   await page.goto('/viewer/96');await expect(page.getByRole('progressbar')).toBeVisible();
-  await page.getByRole('button',{name:'← Patients',exact:true}).click();
+  await page.getByRole('link',{name:'Home',exact:true}).click();
   await expect(page.locator('.resident-viewer')).toHaveCount(0);release();
   await expect(page.getByRole('heading',{name:'Patients',exact:true})).toBeVisible();
+});
+
+
+test('patient tabs switch warm sessions and close only the selected patient',async({page})=>{
+  const {requests}=await residentPhantoms(page);
+  const navigation=page.getByRole('navigation',{name:'Open patients'});
+  await page.goto('/');
+  await expect(navigation.getByRole('link',{name:'Home',exact:true})).toHaveAttribute('aria-current','page');
+  await page.getByRole('link',{name:'Open patient 96',exact:true}).click();
+  await expect(page.locator(active)).toHaveAttribute('data-ready','true');
+  await page.getByLabel('Vessel',{exact:true}).selectOption('RCA');
+  await page.locator(`${active} .scene canvas`).evaluate(canvas=>(window as any).firstPatientCanvas=canvas);
+  await navigation.getByRole('link',{name:'Home',exact:true}).click();
+  await page.getByRole('link',{name:'Open patient 814',exact:true}).click();
+  await expect(page.locator(active)).toHaveAttribute('data-ready','true');
+  const count=requests.length;
+  await navigation.getByRole('link',{name:'Patient 96',exact:true}).click();
+  await expect(page.locator(active).getByLabel('Vessel',{exact:true})).toHaveValue('RCA');
+  expect(await page.locator(`${active} .scene canvas`).evaluate(canvas=>canvas===(window as any).firstPatientCanvas)).toBe(true);
+  expect(requests.slice(count).filter(path=>path.startsWith('/api/cases/'))).toEqual([]);
+  await expect(navigation.getByRole('link',{name:'Patient 96',exact:true})).toHaveAttribute('aria-current','page');
+  await expect(page.getByRole('button',{name:'Show AI report',exact:true})).toHaveCount(1);
+  await page.getByLabel('Layers',{exact:true}).click();await expect(page.getByLabel('Window width',{exact:true})).toBeVisible();
+  await page.getByLabel('Layers',{exact:true}).click();
+  await page.screenshot({path:'test-results/patient-tabs.png'});
+  // Closing a background tab does not navigate or disturb the active canvas.
+  await navigation.getByRole('button',{name:'Close patient 814',exact:true}).click();
+  await expect(page).toHaveURL(/\/viewer\/96$/);
+  await expect(page.locator('.resident-viewer[data-patient-id="814"]')).toHaveCount(0);
+  await expect(navigation.getByRole('link',{name:'Patient 814',exact:true})).toHaveCount(0);
+  // The active tab closes to its neighbour, and the final tab closes to Home.
+  await navigation.getByRole('link',{name:'Home',exact:true}).click();
+  await page.getByRole('link',{name:'Open patient 893',exact:true}).click();
+  await expect(page.locator(active)).toHaveAttribute('data-ready','true');
+  await navigation.getByRole('button',{name:'Close patient 893',exact:true}).click();
+  await expect(page).toHaveURL(/\/viewer\/96$/);
+  await navigation.getByRole('button',{name:'Close patient 96',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Patients',exact:true})).toBeVisible();
+  await expect(page.locator('.resident-viewer')).toHaveCount(0);
+  await expect(navigation.getByRole('link')).toHaveCount(1);
+  // Browser history can reopen a closed patient as a fresh session.
+  await page.goBack();
+  await expect(page.locator(active)).toHaveAttribute('data-ready','true');
+  await expect(navigation.getByRole('link',{name:'Patient 96',exact:true})).toHaveAttribute('aria-current','page');
 });

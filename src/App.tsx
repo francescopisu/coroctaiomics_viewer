@@ -1,4 +1,5 @@
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {Scene,type CpeVolumeStatus} from './scene';
 import {CprScene} from './cprScene';
 import {SliceView} from './SliceView';
@@ -16,9 +17,10 @@ import {AiPanel} from './AiPanel';
 import type {AiFeature} from './aiTypes';
 import {restoreView,saveView} from './viewState';
 import {attenuationBands} from './cpeVolumeData';
+import {useWindowLevel,type WindowLevel} from './useWindowLevel';
 
-const initial:Controls={render3d:'cpe',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.15,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:true,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:true,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
-export default function App({patientId,onBack,active=true,onReady}:{patientId:string;onBack:()=>void;active?:boolean;onReady?:(id:string)=>void}){
+const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.15,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:false,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
+export default function App({patientId,toolbarHost,active=true,onReady}:{patientId:string;toolbarHost:HTMLElement|null;active?:boolean;onReady?:(id:string)=>void}){
   const [data,setData]=useState<Case>(),[c,setC]=useState(()=>restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
   const latestControls=useRef(c);latestControls.current=c;
   useEffect(()=>()=>saveView(patientId,latestControls.current),[patientId]);
@@ -28,6 +30,9 @@ export default function App({patientId,onBack,active=true,onReady}:{patientId:st
   const [featureCache,setFeatureCache]=useState<{data:Case;cache:ResourceCache<FeatureVolume>}>(),[,refreshFeatures]=useState(0);
   const [markers,setMarkers]=useState<CprMarker[]>([]);
   const [aiOpen,setAiOpen]=useState(false),aiButton=useRef<HTMLButtonElement>(null);
+  const [mapsVisible,setMapsVisible]=useState(false);
+  const changeWindowLevel=useCallback((value:WindowLevel)=>setC(old=>({...old,...value})),[]);
+  const windowLevel=useWindowLevel(c,changeWindowLevel,active);
   const [volumeStatus,setVolumeStatus]=useState<CpeVolumeStatus>({phase:'idle'});
   // Keep optical 3D controls from repainting the four independent image views.
   const imagingControls=useMemo(()=>c,[c.vessel,c.index,c.axialSlice,c.curvedAngle,c.straightAngle,c.featureIds,c.featureOpacity,c.featureScale,c.cpeVisible,c.cprAntialias,c.smoothEdges,c.lumen,c.lumenOpacity,c.cpe,c.cpeOpacity,c.colors,c.width,c.level,c.raw]);
@@ -37,7 +42,9 @@ export default function App({patientId,onBack,active=true,onReady}:{patientId:st
   const update=<K extends keyof Controls>(key:K,value:Controls[K])=>setC(old=>({...old,[key]:value,...(key==='index'?{axialSlice:undefined}:{})}));
   const select=(vessel:Vessel,index=0)=>setC(old=>({...old,vessel,index,axialSlice:undefined,curvedAngle:vessel===old.vessel?old.curvedAngle:0,straightAngle:vessel===old.vessel?old.straightAngle:0}));
   const volume=loaded&&loaded.data===data?loaded.volumes[c.vessel]:undefined;
-  const availableFeatures=data?.featureMaps?.[c.vessel]??[],featureId=c.featureIds[c.vessel],featureInfo=availableFeatures.find(f=>f.id===featureId);
+  const availableFeatures=data?.featureMaps?.[c.vessel]??[];
+  const featureId=mapsVisible?(availableFeatures.find(f=>f.id===c.featureIds[c.vessel])?.id??availableFeatures[0]?.id??''):'';
+  const featureInfo=availableFeatures.find(f=>f.id===featureId);
   const feature=featureCache&&featureCache.data===data&&featureInfo?featureCache.cache.get(featureId):undefined;
   const scale=featureInfo?featureScale(featureInfo,c.featureScale):undefined;
   const basePlane=useMemo(()=>data&&volume?crossSection(data,c,volume):undefined,[data,volume,c.vessel,c.index,c.smoothEdges]);
@@ -53,7 +60,7 @@ export default function App({patientId,onBack,active=true,onReady}:{patientId:st
     s.load(abort.signal,downloads).then(()=>{if(!abort.signal.aborted)setReady(true);}).catch(e=>{if(e.name!=='AbortError')setError(e.message);});
     return()=>{abort.abort();scene.current=undefined;recon.current=undefined;r.dispose();s.dispose();};
   },[data]);
-  useEffect(()=>{scene.current?.setActive(active);recon.current?.setActive(active);},[active,data]);
+  useEffect(()=>{scene.current?.setActive(active&&!aiOpen);recon.current?.setActive(active);},[active,data,aiOpen]);
   useEffect(()=>{
     if(!data)return;const abort=new AbortController(),owned:Volume[]=[];let shared:SharedCt|undefined;setLoaded(undefined);setNativeAxial(undefined);
     const native=loadAxialVolume(data.axialVolume,data.geometry.shape,abort.signal,downloads).then(stack=>{
@@ -78,7 +85,7 @@ export default function App({patientId,onBack,active=true,onReady}:{patientId:st
   useEffect(()=>{recon.current?.setVolume(volume);recon.current?.setFeature(feature);if(volume)recon.current?.update(imagingControls);},[feature,volume,imagingControls]);
   useEffect(()=>{scene.current?.update(c,plane);},[c,plane,ready]);
   useEffect(()=>{scene.current?.setNativeStack(nativeAxial);},[nativeAxial,ready]);
-  const startupComplete=ready&&!!volume&&!!axialPlane&&(volumeStatus.phase==='ready'||volumeStatus.phase==='error')&&!error;
+  const startupComplete=ready&&!!volume&&!!axialPlane&&(c.render3d==='anatomy'||volumeStatus.phase==='ready'||volumeStatus.phase==='error')&&!error;
   useEffect(()=>{
     if(bootDone||!startupComplete)return;let second=0,timer=0;
     const first=requestAnimationFrame(()=>{second=requestAnimationFrame(()=>{
@@ -91,24 +98,16 @@ export default function App({patientId,onBack,active=true,onReady}:{patientId:st
   const selectAiFeature=(feature:AiFeature)=>{
     const map=data?.featureMaps[feature.vessel].find(f=>f.name.toLowerCase()===feature.mapName.toLowerCase());
     if(!map)return;
+    setMapsVisible(true);
     setC(old=>({...old,vessel:feature.vessel,index:old.vessel===feature.vessel?old.index:0,axialSlice:undefined,
       straightAngle:old.vessel===feature.vessel?old.straightAngle:0,curvedAngle:old.vessel===feature.vessel?old.curvedAngle:0,
       featureIds:{...old.featureIds,[feature.vessel]:map.id}}));
   };
-  return <><main inert={!bootDone&&!error} aria-busy={(!bootDone&&!error)||!!featureInfo&&!feature}>
-    <header className="toolbar" aria-label="Viewer controls">
-      {(bootDone||error)&&<button className="patients-back" onClick={onBack}>← Patients</button>}<span className="viewer-patient" title={`Patient ${patientId}`}>{patientId}</span>
-      <select aria-label="Vessel" value={c.vessel} onChange={e=>select(e.target.value as Vessel)}>{vessels.map(v=><option key={v}>{v}</option>)}</select>
-      <select className="feature-select" aria-label="Radiomic feature map" disabled={!availableFeatures.length} value={featureId} onChange={e=>update('featureIds',{...c.featureIds,[c.vessel]:e.target.value})}>
-        <option value="">{availableFeatures.length?'No feature map':'No feature maps'}</option>{availableFeatures.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
-      </select>
-      {featureInfo&&<select className="scale-select" aria-label="Feature scale" value={c.featureScale} title="Balanced: 2nd percentile / median / 98th percentile. Raw zero: original sign and symmetric extrema." onChange={e=>update('featureScale',e.target.value as Controls['featureScale'])}><option value="balanced">Balanced</option><option value="raw">Raw zero</option></select>}
-      {featureInfo&&scale&&<div className="feature-scale" aria-label="Feature color scale" title={`${featureInfo.name}: ${c.featureScale==='balanced'?'2nd percentile / median / 98th percentile':'raw, zero-centered'}`}><i style={{background:FEATURE_GRADIENT}}/><div>{scale.map((value,i)=><span key={i}>{featureNumber(value)}</span>)}</div></div>}
-      {featureInfo&&!feature&&<span className="map-loading">Loading map…</span>}
-      <button className="mask-toggle" aria-label="CPE masks" aria-pressed={c.cpeVisible} onClick={()=>update('cpeVisible',!c.cpeVisible)}>CPE masks</button>
-      <button ref={aiButton} className="ai-toggle" aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!data}>AI</button>
-      <button onClick={()=>{scene.current?.reset();setC(old=>({...old,curvedAngle:0,straightAngle:0}));}} disabled={!ready}>Reset</button>
-      <details className="layers"><summary aria-label="Layers" title="Layers"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M9.5 2h5l.5 3 1.7 1 2.9-1 2.5 4.3-2.3 2v2l2.3 2-2.5 4.3-2.9-1-1.7 1-.5 3h-5l-.5-3-1.7-1-2.9 1-2.5-4.3 2.3-2v-2l-2.3-2L4.4 5l2.9 1L9 5Z"/><circle cx="12" cy="12.3" r="3.2"/></svg></summary><div className="layer-menu">
+  return <>
+    {active&&toolbarHost&&createPortal(<>
+      <button ref={aiButton} className="ai-toggle" aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!bootDone}>Show AI report</button>
+      <details className="layers" inert={!bootDone&&!error}><summary aria-label="Layers" title="Viewer settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M9.5 2h5l.5 3 1.7 1 2.9-1 2.5 4.3-2.3 2v2l2.3 2-2.5 4.3-2.9-1-1.7 1-.5 3h-5l-.5-3-1.7-1-2.9 1-2.5-4.3 2.3-2v-2l-2.3-2L4.4 5l2.9 1L9 5Z"/><circle cx="12" cy="12.3" r="3.2"/></svg></summary><div className="layer-menu">
+        <button className="mask-toggle" aria-label="CPE masks" aria-pressed={c.cpeVisible} onClick={()=>update('cpeVisible',!c.cpeVisible)}>CPE masks<span aria-hidden="true">{c.cpeVisible?'On':'Off'}</span></button>
         <div className="layer-window">
       <label className="window">W<input aria-label="Window width" type="number" min="1" max="3000" value={c.width} onChange={e=>update('width',Math.max(1,+e.target.value))}/></label>
       <label className="window">L<input aria-label="Window level" type="number" value={c.level} onChange={e=>update('level',+e.target.value)}/></label>
@@ -126,24 +125,40 @@ export default function App({patientId,onBack,active=true,onReady}:{patientId:st
         <label className="slider">Map opacity<input aria-label="Feature map opacity" type="range" min="0" max="1" step=".01" value={c.featureOpacity} onChange={e=>update('featureOpacity',+e.target.value)}/></label>
         <label><input type="checkbox" checked={c.raw} onChange={e=>update('raw',e.target.checked)}/>CCTA</label>
         <label><input type="checkbox" checked={c.context} onChange={e=>update('context',e.target.checked)}/>3D plane</label>
+        <div className="layer-menu-footer"><button title="Reset camera and CPR rotations" onClick={e=>{scene.current?.reset();setC(old=>({...old,curvedAngle:0,straightAngle:0}));const menu=e.currentTarget.closest('details');if(menu)menu.open=false;}} disabled={!ready}>Reset</button></div>
       </div></details>
-    </header>
+    </>,toolbarHost)}
+    <main inert={!bootDone&&!error} aria-busy={(!bootDone&&!error)||!!featureInfo&&!feature}>
+    <div className="vessel-toolbar" role="toolbar" aria-label="Vessel and radiomic map controls">
+      <label className="vessel-control"><span>Vessel</span><select aria-label="Vessel" value={c.vessel} onChange={e=>select(e.target.value as Vessel)}>{vessels.map(v=><option key={v}>{v}</option>)}</select></label>
+      <button className="cpe-toggle" aria-pressed={c.render3d==='cpe'} disabled={!data} onClick={()=>setC(old=>{const show=old.render3d!=='cpe';return {...old,render3d:show?'cpe':'anatomy',cpeVisible:show,...(show?{cpe:{LAD:true,LCx:true,RCA:true}}:{})};})}>Show periluminal envelopes</button>
+      <button className="maps-toggle" aria-pressed={mapsVisible} disabled={!availableFeatures.length&&!mapsVisible} title={availableFeatures.length?'Toggle vessel-specific radiomic maps':'No radiomic maps prepared for this vessel'} onClick={()=>setMapsVisible(value=>!value)}>Show radiomic maps</button>
+      {mapsVisible&&availableFeatures.length>0&&<select className="feature-select" aria-label="Radiomic feature map" value={featureId} onChange={e=>update('featureIds',{...c.featureIds,[c.vessel]:e.target.value})}>
+        {availableFeatures.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
+      </select>}
+      {featureInfo&&<select className="scale-select" aria-label="Feature scale" value={c.featureScale} title="Balanced: 2nd percentile / median / 98th percentile. Raw zero: original sign and symmetric extrema." onChange={e=>update('featureScale',e.target.value as Controls['featureScale'])}><option value="balanced">Balanced</option><option value="raw">Raw zero</option></select>}
+      {featureInfo&&scale&&<div className="feature-scale" aria-label="Feature color scale" title={`${featureInfo.name}: ${c.featureScale==='balanced'?'2nd percentile / median / 98th percentile':'raw, zero-centered'}`}><i style={{background:FEATURE_GRADIENT}}/><div>{scale.map((value,i)=><span key={i}>{featureNumber(value)}</span>)}</div></div>}
+      {featureInfo&&!feature&&<span className="map-loading">Loading map…</span>}
+    </div>
     {error&&<div className="error" role="alert">{error}<button onClick={()=>location.reload()}>Reload</button></div>}
     <div className="workspace">
-      <section className="panel overview" aria-label="3D coronary view"><h2>3D</h2>
-        <div className="render3d-controls">
+      <section className="panel overview" aria-label={aiOpen?'AI report':'3D coronary view'}>
+        <div className="overview-scene-layer" inert={aiOpen} aria-hidden={aiOpen}><h2>3D</h2>
+        {c.render3d==='cpe'&&<div className="render3d-controls">
           <details className="volume-settings"><summary aria-label="CPE volume settings">Settings</summary><div className="volume-menu">
             <label>Density<input aria-label="CPE volume density" type="range" min="0" max="2" step=".05" value={c.volumeDensity} onChange={e=>update('volumeDensity',+e.target.value)}/></label>
             {attenuationBands.map(band=><label key={band.id} title={band.range}>{band.label}<input aria-label={`${band.label} opacity`} type="range" min="0" max="2" step=".05" value={c.volumeBands[band.id]} onChange={e=>update('volumeBands',{...c.volumeBands,[band.id]:+e.target.value})}/></label>)}
             <label>Context<input aria-label="CPE anatomical context opacity" type="range" min="0" max="1" step=".05" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
           </div></details>
-        </div>
+        </div>}
         <div className="scene" ref={sceneHost}/>{!ready&&<span className="loading">Loading…</span>}
         {c.render3d==='cpe'&&volumeStatus.phase==='preparing'&&<span className="volume-status" role="status">Preparing CPE volume…</span>}
         {c.render3d==='cpe'&&volumeStatus.phase==='error'&&<div className="volume-status" role="alert">{volumeStatus.message}<button onClick={()=>scene.current?.retryVolume()}>Retry</button></div>}
         {c.render3d==='cpe'&&volumeStatus.phase==='ready'&&<div className="volume-legend" aria-label="CPE CT attenuation bands" title="Display bands in native HU, not validated plaque or histological classifications. Colors apply only to saved CPE voxels; they are independent of the radiomic-map palette.">{attenuationBands.map(band=><span key={band.id} title={band.range}><i style={{background:band.color}}/>{band.label}</span>)}</div>}
+        </div>
+      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={active&&aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
       </section>
-      <section className="recon" aria-label="Coronary reconstructions"><div className="cpr-render" ref={cprHost}/>{[0,1].map(view=><div key={view} className={`cpr-hit ${view===0?'straight':'curved'}`} aria-label={view===0?'Straightened reconstruction':'Curved CPR'}
+      <section className={`recon${windowLevel.windowing?' is-windowing':''}`} aria-label="Coronary reconstructions" {...windowLevel.handlers}><div className="cpr-render" ref={cprHost}/>{[0,1].map(view=><div key={view} className={`cpr-hit ${view===0?'straight':'curved'}`} aria-label={view===0?'Straightened reconstruction':'Curved CPR'} title="Right-drag: left/right adjusts window width; up/down adjusts level."
         onPointerDown={e=>{if(!volume||e.button!==0)return;e.currentTarget.setPointerCapture(e.pointerId);drag.current={x:e.clientX,y:e.clientY,angle:view===0?c.straightAngle:c.curvedAngle,view};}}
         onPointerMove={e=>{const d=drag.current;if(!d||!e.buttons)return;const dx=e.clientX-d.x,dy=e.clientY-d.y;
           if(!d.mode&&Math.hypot(dx,dy)>4)d.mode=d.view===1||Math.abs(dx)>=Math.abs(dy)?'rotate':'navigate';
@@ -154,16 +169,14 @@ export default function App({patientId,onBack,active=true,onReady}:{patientId:st
           <h2>{view===0?'Straightened':'Curved CPR'}</h2><output className="angle" aria-label={view===0?'Straightened rotation':'CPR rotation'}>{Math.round(view===0?c.straightAngle:c.curvedAngle)}°</output>
           {volume&&markers[view]&&<div className="position-marker" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={markers[view].line.map(p=>p.join(',')).join(' ')}/></svg><i style={{left:`${markers[view].center[0]}%`,top:`${markers[view].center[1]}%`}}/></div>}
           {!volume&&<span className="loading">Loading…</span>}
-        </div>)}</section>
+        </div>)}{windowLevel.windowing&&<output className="window-level-readout">W {c.width} · L {c.level}</output>}</section>
       <div className="right-views">
-        <section className="panel"><h2>Cross-section</h2>{data&&<SliceView active={active} kind="cross" onNavigate={i=>update('index',i)} plane={plane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
-        <section className="panel"><h2>Axial</h2>{data&&<SliceView active={active} kind="axial" onNavigate={i=>setC(old=>navigateAxial(data,old,i))} plane={axialPlane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
+        <section className="panel"><h2>Cross-section</h2>{data&&<SliceView active={active} kind="cross" onNavigate={i=>update('index',i)} onWindowLevel={changeWindowLevel} plane={plane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
+        <section className="panel"><h2>Axial</h2>{data&&<SliceView active={active} kind="axial" onNavigate={i=>setC(old=>navigateAxial(data,old,i))} onWindowLevel={changeWindowLevel} plane={axialPlane} data={data} c={imagingControls} onSelect={i=>update('index',i)}/>}</section>
       </div>
-      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={active&&aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
     </div>
   </main>
     {!bootDone&&!error&&<div className={`initial-loader${bootPercent===100?' complete':''}`}>
-      <button className="loader-back" onClick={onBack}>← Patients</button>
       <div className="initial-progress" role="progressbar" aria-label="Loading viewer" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bootPercent}>
         <div className="initial-progress-patient">Patient {patientId}</div><div className="initial-progress-label"><span>Loading…</span><span>{bootPercent}%</span></div>
         <div className="initial-progress-track"><div style={{width:`${bootPercent}%`}}/></div>

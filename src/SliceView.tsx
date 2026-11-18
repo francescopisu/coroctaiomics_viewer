@@ -5,7 +5,9 @@ import {contours,contourPath} from './contours';
 import {planeBasis,directionLabel,drawCube} from './orientation';
 import {lumenReference} from './diameter';
 import {clampSlice,nearestCentreline} from './sliceNavigation';
-export function SliceView({kind,plane,data,c,onSelect,onNavigate,active=true}:{kind:'cross'|'axial';plane?:Plane;data:Case;c:Controls;onSelect:(i:number)=>void;onNavigate:(i:number)=>void;active?:boolean}){
+import {useWindowLevel,type WindowLevel} from './useWindowLevel';
+export function SliceView({kind,plane,data,c,onSelect,onNavigate,onWindowLevel,active=true}:{kind:'cross'|'axial';plane?:Plane;data:Case;c:Controls;onSelect:(i:number)=>void;onNavigate:(i:number)=>void;onWindowLevel:(value:WindowLevel)=>void;active?:boolean}){
+  const windowLevel=useWindowLevel(c,onWindowLevel,active);
   const ref=useRef<HTMLCanvasElement>(null),host=useRef<HTMLDivElement>(null),latest=useRef({c,onNavigate}),drag=useRef<{y:number;index:number;moved:boolean;pointer:number}|undefined>(undefined);
   latest.current={c,onNavigate};const [size,setSize]=useState(0);
   const count=kind==='cross'?data.vessels[c.vessel].points.length:data.geometry.shape[2],current=kind==='cross'?c.index:axialIndex(data,c);
@@ -51,19 +53,19 @@ export function SliceView({kind,plane,data,c,onSelect,onNavigate,active=true}:{k
         for(const tick of [center-limit/4,center+limit/4])if(tick>0&&tick<limit){if(horizontal){ctx.moveTo(tick,y-5*pixel);ctx.lineTo(tick,y+5*pixel);}else{ctx.moveTo(x-5*pixel,tick);ctx.lineTo(x+5*pixel,tick);}}ctx.stroke();};
       axis('#d14955',true);axis('#69b54c',false);
     }else{ctx.strokeStyle='#e7c84f';ctx.lineWidth=pixel;ctx.beginPath();ctx.moveTo(x-6*pixel,y);ctx.lineTo(x+6*pixel,y);ctx.moveTo(x,y-6*pixel);ctx.lineTo(x,y+6*pixel);ctx.stroke();}
-    ctx.font=`${12*pixel}px system-ui`;ctx.textBaseline='top';ctx.fillStyle='#cbd5db';ctx.shadowColor='#000';ctx.shadowBlur=3*pixel;
+    ctx.font=`${14*pixel}px system-ui`;ctx.textBaseline='top';ctx.fillStyle='#cbd5db';ctx.shadowColor='#000';ctx.shadowBlur=3*pixel;
     if(kind==='cross'){
-      ctx.fillText(`Lumen Øeq: ${reference?.diameterMm!=null?reference.diameterMm.toFixed(2)+' mm':'—'}`,10*pixel,9*pixel);
+      ctx.fillText(`Lumen Øeq: ${reference?.diameterMm!=null?reference.diameterMm.toFixed(2)+' mm':'—'}`,10*pixel,27*pixel);
       ctx.shadowBlur=0;ctx.strokeStyle='#bcc6ce';ctx.lineWidth=pixel;const end=canvas.width-12*pixel,start=end-5/(plane.width*plane.spacingMm!)*canvas.width;
-      ctx.beginPath();ctx.moveTo(start,canvas.height-14*pixel);ctx.lineTo(end,canvas.height-14*pixel);ctx.stroke();ctx.fillStyle='#bcc6ce';ctx.font=`${10*pixel}px system-ui`;ctx.fillText('5 mm',start,canvas.height-29*pixel);
+      ctx.beginPath();ctx.moveTo(start,canvas.height-14*pixel);ctx.lineTo(end,canvas.height-14*pixel);ctx.stroke();ctx.fillStyle='#bcc6ce';ctx.font=`${12*pixel}px system-ui`;ctx.fillText('5 mm',start,canvas.height-29*pixel);
     }else ctx.fillText(`Slice: ${axialIndex(data,c)+1}/${data.geometry.shape[2]}`,10*pixel,9*pixel);
-    ctx.shadowBlur=0;ctx.fillStyle='#7fa46c';ctx.font=`${11*pixel}px system-ui`;ctx.textAlign='center';
+    ctx.shadowBlur=0;ctx.fillStyle='#7fa46c';ctx.font=`${13*pixel}px system-ui`;ctx.textAlign='center';
     ctx.fillText(directionLabel(basis.up),canvas.width/2,8*pixel);ctx.fillText(directionLabel(basis.up.map(v=>-v) as Vec3),canvas.width/2,canvas.height-21*pixel);
     ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillText(directionLabel(basis.right.map(v=>-v) as Vec3),8*pixel,canvas.height/2);ctx.textAlign='right';ctx.fillText(directionLabel(basis.right),canvas.width-8*pixel,canvas.height/2);
     drawCube(ctx,basis,8*pixel,canvas.height-64*pixel,56*pixel);
   },[plane,c,data,kind,loops,size,active]);
-  return <div ref={host} className={`slice-image ${kind}`} tabIndex={0} role="group" aria-label={kind==='cross'?'Orthogonal slice navigation':'Axial slice navigation'}
-    title={kind==='cross'?'Scroll or drag vertically to move along the vessel. Lumen Øeq = diameter of a circle with the same unsmoothed lumen area.':'Scroll or drag vertically through native CT slices. Click to select the nearest vessel point.'}
+  return <div ref={host} className={`slice-image ${kind}${windowLevel.windowing?' is-windowing':''}`} tabIndex={0} role="group" aria-label={kind==='cross'?'Orthogonal slice navigation':'Axial slice navigation'} {...windowLevel.handlers}
+    title={(kind==='cross'?'Scroll or left-drag vertically to move along the vessel. Lumen Øeq = diameter of a circle with the same unsmoothed lumen area.':'Scroll or left-drag vertically through native CT slices. Click to select the nearest vessel point.')+' Right-drag: left/right adjusts window width; up/down adjusts level.'}
     onKeyDown={e=>{let next:number|undefined;if(e.key==='ArrowDown')next=current+1;else if(e.key==='ArrowUp')next=current-1;else if(e.key==='PageDown')next=current+10;else if(e.key==='PageUp')next=current-10;else if(e.key==='Home')next=0;else if(e.key==='End')next=count-1;if(next!==undefined){e.preventDefault();onNavigate(clampSlice(next,count));}}}
     onPointerDown={e=>{if(e.button!==0)return;e.currentTarget.focus({preventScroll:true});e.currentTarget.setPointerCapture(e.pointerId);drag.current={y:e.clientY,index:current,moved:false,pointer:e.pointerId};}}
     onPointerMove={e=>{const d=drag.current;if(!d||e.pointerId!==d.pointer)return;const dy=e.clientY-d.y;if(Math.abs(dy)>=4)d.moved=true;if(d.moved)onNavigate(clampSlice(d.index+Math.trunc(dy/4),count));}}
@@ -73,6 +75,7 @@ export function SliceView({kind,plane,data,c,onSelect,onNavigate,active=true}:{k
       const point=a.slice(0,3).map(row=>row[0]*x+row[1]*y+row[2]*z+row[3]) as Vec3;onSelect(nearestCentreline(data,c.vessel,point));}}
     onPointerCancel={()=>{drag.current=undefined;}} onLostPointerCapture={()=>{drag.current=undefined;}}>
     <canvas aria-label={kind==='cross'?'Orthogonal cross-section':'Axial CCTA'} data-lumen-diameter-mm={reference?.diameterMm??''} ref={ref}/>
+    {windowLevel.windowing&&<output className="window-level-readout">W {c.width} · L {c.level}</output>}
     {!plane&&<span className="loading">Loading…</span>}
   </div>;
 }

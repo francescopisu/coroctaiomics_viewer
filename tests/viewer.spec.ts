@@ -73,7 +73,7 @@ test('five linked views: GPU curved CPR rotates and navigation stays synchronize
   await page.getByLabel('Layers',{exact:true}).click();
   await page.getByRole('spinbutton',{name:'Window level',exact:true}).fill('300');
   await page.getByLabel('Layers',{exact:true}).click();
-  await page.getByRole('button',{name:'Reset',exact:true}).click();await expect(page.getByLabel('CPR rotation')).toHaveText('0°');
+  await page.getByLabel('Layers',{exact:true}).click();await page.getByRole('button',{name:'Reset',exact:true}).click();await expect(page.getByLabel('CPR rotation')).toHaveText('0°');
   await expect(page.getByLabel('Straightened rotation')).toHaveText('0°');
   await expect.poll(()=>page.locator('.axial canvas').evaluate((el:HTMLCanvasElement)=>el.width)).toBe(600);
   await page.screenshot({path:'test-results/five-views-final.png'});

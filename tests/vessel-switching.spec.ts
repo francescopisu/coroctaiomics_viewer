@@ -14,7 +14,7 @@ test('first 3D vessel selections and remembered maps do not fetch or flash Loadi
   // Isolate the visible, pickable centreline geometry for deterministic 3D picks.
   await page.getByLabel('Layers',{exact:true}).click();await page.getByRole('checkbox',{name:'Lumen',exact:true}).uncheck();
   if(data.surfaces.ascending_aorta)await page.getByRole('checkbox',{name:'Ascending aorta',exact:true}).uncheck();
-  await page.getByLabel('Layers',{exact:true}).click();await page.getByRole('button',{name:'CPE masks',exact:true}).click();
+  await page.getByRole('button',{name:'CPE masks',exact:true}).click();await page.getByLabel('Layers',{exact:true}).click();
   const scene=page.locator('.scene'),rect=(await scene.boundingBox())!,scale=Math.max((bounds[5]-bounds[4])/2,(bounds[1]-bounds[0])/(2*rect.width/rect.height))*1.12,ppm=rect.height/(2*scale),cx=(bounds[0]+bounds[1])/2,cz=(bounds[4]+bounds[5])/2;
   const projected=Object.fromEntries(Object.entries(data.vessels).map(([name,line]:[string,any])=>[name,line.points.map((p:number[])=>[rect.width/2+(p[0]-cx)*ppm,rect.height/2-(p[2]-cz)*ppm])])) as Record<string,number[][]>;
   const pick=async(vessel:string)=>{

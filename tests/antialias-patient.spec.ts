@@ -6,7 +6,7 @@ for(const dpr of [1,2])test.describe(`patient antialiasing at device scale ${dpr
     test.setTimeout(180000);const data=await (await request.get('/api/case')).json();test.skip(data.patientId!=='1718','Patient-specific sampling audit');
     const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
     await page.goto('/viewer/1718');const viewer=page.locator('main');await expect(viewer).toHaveAttribute('aria-busy','false',{timeout:90000});
-    await page.getByRole('button',{name:'CPE masks',exact:true}).click();await page.getByLabel('Layers',{exact:true}).click();await page.getByRole('checkbox',{name:'Lumen',exact:true}).uncheck();await page.getByLabel('Layers',{exact:true}).click();
+    await page.getByLabel('Layers',{exact:true}).click();await page.getByRole('button',{name:'CPE masks',exact:true}).click();await page.getByRole('checkbox',{name:'Lumen',exact:true}).uncheck();await page.getByLabel('Layers',{exact:true}).click();
     const results:Record<string,unknown>[]=[];
     for(const vessel of ['LAD','RCA']){
       await page.getByLabel('Vessel',{exact:true}).selectOption(vessel);await expect(viewer).toHaveAttribute('aria-busy','false',{timeout:90000});await expect(page.locator('.recon .loading')).toHaveCount(0);
