@@ -1,7 +1,7 @@
 import type {Page} from '@playwright/test';
 
 /** Small but real WebGL/CPR/volume sessions, with separate data for each patient. */
-export async function residentPhantoms(page:Page){
+export async function residentPhantoms(page:Page,options:{jaggedLumen?:boolean}={}){
   const ids=['96','814','893','fourth'],shape=[64,32,64],n=shape.reduce((a,b)=>a*b,1),spacing=.5;
   const requests:string[]=[];
   const points=Array.from({length:33},(_,i)=>[0,0,-8+i*.5]);
@@ -14,6 +14,7 @@ export async function residentPhantoms(page:Page){
       const p=i+shape[0]*(j+shape[1]*k),r=Math.hypot(i*spacing-16,j*spacing-8);
       if(r<1){ct[p]=300+index*100;labels[p]=1;lumen[p]=1;}
       else if(r<3){ct[p]=-100+index*20;labels[p]=2;cpe[p]=1;display[p]=255;valid[p]=1;values[p]=(i-32)/6;}
+      if(options.jaggedLumen)lumen[p]=Math.hypot(i*spacing-16-(k%2?.4:-.4),j*spacing-8)<1?1:0;
     }
     const base=`/api/cases/${id}/assets/`,affineLPS=[[spacing,0,0,-16],[0,spacing,0,-8],[0,0,spacing,-16],[0,0,0,1]];
     const volume={dimensions:shape,spacing:[spacing,spacing,spacing],origin:[-16,-8,-16],direction:[1,0,0,0,1,0,0,0,1],affineLPS,scalarType:'int16',ct:base+'ct',lumen:base+'lumen',cpe:base+'cpe',cpeDisplay:base+'display'};

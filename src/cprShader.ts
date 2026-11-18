@@ -1,5 +1,5 @@
 // vtk.js 37.4.1's CPR renderer does not apply generic ShaderReplacements.
-// Extend CT pixel-footprint filtering and feature coloring while retaining the
+// Extend CT pixel-footprint filtering, lumen outlines and feature coloring while retaining the
 // native centerline geometry, orientations and physical sampling surface.
 // @ts-expect-error vtk.js does not publish types for this OpenGL factory.
 import vtkOpenGLImageCPRMapper from '@kitware/vtk.js/Rendering/OpenGL/ImageCPRMapper';
@@ -37,7 +37,7 @@ registerOverride('vtkImageCPRMapper',macro.newInstance((mapper:any,model:any,ini
   const build=mapper.buildShaders,needs=mapper.getNeedToRebuildShaders;
   const spec=()=>mapper.getRenderable()?.getViewSpecificProperties()?.OpenGL??{};
   let previous:string|undefined;
-  mapper.getNeedToRebuildShaders=(...args:unknown[])=>{const normal=needs(...args),s=spec(),current=JSON.stringify([s.FeatureSamplingShader,!!s.PixelFootprintAntialiasing]),changed=current!==previous;previous=current;return normal||changed;};
+  mapper.getNeedToRebuildShaders=(...args:unknown[])=>{const normal=needs(...args),s=spec(),current=JSON.stringify([s.FeatureSamplingShader,!!s.PixelFootprintAntialiasing,s.LumenOutlineWidth,s.LumenSmoothingOffset]),changed=current!==previous;previous=current;return normal||changed;};
   mapper.buildShaders=(shaders:{Fragment:string},...args:unknown[])=>{
     build(shaders,...args);const s=spec();
     if(s.PixelFootprintAntialiasing){
@@ -46,7 +46,28 @@ registerOverride('vtkImageCPRMapper',macro.newInstance((mapper:any,model:any,ini
       // Compute derivatives before the volume-bounds branch, in uniform flow.
       shaders.Fragment=shaders.Fragment.replace(bounds,footprintDerivatives+'\n'+bounds).replace(sample,footprintSampling);
     }
-    const custom=s.FeatureSamplingShader;if(!custom)return;
+    // Linear sampling gives a continuous 0.5 boundary through the native mask.
+    // Convert distance from that boundary into screen pixels so only a thin,
+    // antialiased contour is drawn, with no tint inside the lumen.
+    const custom=s.FeatureSamplingShader??(s.LumenOutlineWidth?`
+      float lumenValue = tvalue.r * cscale0 + cshift0;
+      ${s.LumenSmoothingOffset?`
+      // Eight symmetric trilinear taps round the display boundary in 3D,
+      // before CPR resampling. The same field is used at every rotation.
+      // Offsets are capped at half a native voxel / 0.25 mm per axis.
+      vec3 lumenOffset = vec3(${s.LumenSmoothingOffset.map((v:number)=>v.toExponential(8)).join(',')}) / vec3(textureSize(volumeTexture, 0));
+      float lumenAverage = 0.0;
+      for (int lx = -1; lx <= 1; lx += 2)
+        for (int ly = -1; ly <= 1; ly += 2)
+          for (int lz = -1; lz <= 1; lz += 2)
+            lumenAverage += texture(volumeTexture, volumePosTC + vec3(float(lx), float(ly), float(lz)) * lumenOffset).r;
+      lumenValue = (lumenAverage * 0.125) * cscale0 + cshift0;
+      `:''}
+      float lumenGradient = max(length(vec2(dFdx(lumenValue), dFdy(lumenValue))), 1.0e-6);
+      float lumenDistance = abs(lumenValue - 0.5) / lumenGradient;
+      float lumenCoverage = 1.0 - smoothstep(${Math.max(0,s.LumenOutlineWidth/2-.5).toFixed(4)}, ${(s.LumenOutlineWidth/2+.5).toFixed(4)}, lumenDistance);
+      gl_FragData[0] = vec4(vec3(1.0), lumenCoverage * opacity);
+    `:undefined);if(!custom)return;
     const anchor='if (gl_FragData[0].a <= 0.0)';
     if(!shaders.Fragment.includes(anchor))throw new Error('Unsupported vtk.js CPR shader template');
     shaders.Fragment=shaders.Fragment.replace(anchor,custom+'\n'+anchor);

@@ -101,7 +101,12 @@ export class CprScene {
             alpha.addPoint(0,0);alpha.addPoint(114.75,0);alpha.addPoint(127.5,1);if(this.feature){alpha.addPoint(140.25,0);alpha.addPoint(255,0);}else alpha.addPoint(255,1);
             actor.getProperty().setInterpolationTypeToLinear();
           }else actor.getProperty().setInterpolationTypeToNearest();
-          actor.setVisibility(index===1?c.lumen:c.cpeVisible&&c.cpe[c.vessel]);actor.getProperty().setOpacity(index===1?0.12*c.lumenOpacity:(this.feature?0.9:c.cpeOpacity));}
+          if(index===1){
+            actor.getProperty().setInterpolationTypeToLinear();
+            mapper.setViewSpecificProperties({OpenGL:{LumenOutlineWidth:1.5*this.window.getApiSpecificRenderWindow().getSize()[1]/rect.height,
+              LumenSmoothingOffset:c.smoothEdges?this.volume!.info.spacing.map(spacing=>Math.min(.5,.25/spacing)):undefined}});
+          }
+          actor.setVisibility(index===1?c.lumen:c.cpeVisible&&c.cpe[c.vessel]);actor.getProperty().setOpacity(index===1?c.lumenOpacity:(this.feature?0.9:c.cpeOpacity));}
       });
       const mapper=layers[0].mapper,height=mapper.getHeight(),w=mapper.getWidth();
       const yScale=displayHeight/height;
