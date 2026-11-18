@@ -45,6 +45,17 @@ def read_registry():
     return conf
 
 
+def patient_labels():
+    """Presentation aliases only; never change case IDs or imaging signatures."""
+    conf=read_registry();mapping=conf.get('patientLabels', {})
+    if not isinstance(mapping,dict) or any(not isinstance(value,str) or not value.strip() for value in mapping.values()):
+        raise ValueError('patientLabels must map patient IDs to nonempty display names.')
+    labels={patient_id(entry['id']):mapping.get(patient_id(entry['id']),patient_id(entry['id'])).strip() for entry in conf['patients']}
+    if len({label.casefold() for label in labels.values()})!=len(labels):
+        raise ValueError('Patient display names must be unique.')
+    return labels
+
+
 def cached_source(pid, core):
     """Allow prepared imaging to remain usable with the source drive unplugged."""
     from .data import read_json

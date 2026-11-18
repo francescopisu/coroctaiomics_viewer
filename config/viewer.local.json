@@ -12,6 +12,12 @@
     "thresholds": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/external_validation/rebuttal/PRI_risk_strata_thresholds.json",
     "priOofReference": "../resources/ai/pri-oof-reference.json"
   },
+  "patientLabels": {
+    "814": "A-001",
+    "165": "B-002",
+    "96": "C-003",
+    "893": "D-004"
+  },
   "patients": [
     {
       "id": "96",
@@ -26,18 +32,13 @@
     {
       "id": "814",
       "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/501_1000/814.nii.gz",
-      "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/814"
+      "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/814",
+      "clinical": "patients/814.json"
     },
     {
       "id": "893",
       "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/501_1000/893.nii.gz",
       "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/893"
-    },
-    {
-      "id": "P001",
-      "ct": "/Volumes/X9Pro/datasets/new/P001/P001.nii.gz",
-      "output": "/Volumes/X9Pro/datasets/new/P001/output",
-      "clinical": "patients/P001.json"
     }
   ]
 }

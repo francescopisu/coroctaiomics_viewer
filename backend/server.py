@@ -41,6 +41,14 @@ def manifest(case_id,case_config=None):
         raise HTTPException(409,'Case configuration changed. Run python -m backend.prepare, then reload the viewer.')
     return m
 
+@app.get('/api/patient-labels')
+def get_patient_labels():
+    from .registry import patient_labels
+    try: labels=patient_labels()
+    except (OSError,ValueError,KeyError) as error:raise HTTPException(503,f'Invalid patient labels: {error}')
+    return JSONResponse({'labels':labels},headers={'Cache-Control':'no-store'})
+
+
 @app.get('/api/patients')
 def get_patients():
     try: cases=catalog_configurations()

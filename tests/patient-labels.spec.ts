@@ -1,0 +1,36 @@
+import {test,expect} from '@playwright/test';
+import {residentPhantoms} from './helpers/residentPhantom';
+
+test('display labels change visible names while selection and warm viewers keep real case IDs',async({page})=>{
+  const {requests}=await residentPhantoms(page),errors:string[]=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  let labels={'96':'A-001','814':'B-002','893':'C-003','fourth':'D-004'};
+  await page.route('**/api/patient-labels',route=>route.fulfill({json:{labels}}));
+  await page.goto('/?q=ignored&stratum=Low');
+  await expect(page.getByRole('columnheader')).toHaveCount(2);
+  await expect(page.getByRole('link',{name:'Open patient A-001',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Open patient B-002',exact:true})).toBeVisible();
+  await expect(page.locator('.app-header')).toHaveCount(0);
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.getByLabel('Filter risk category')).toHaveCount(0);
+  await page.screenshot({path:'test-results/openday-patient-labels.png'});
+  await page.getByRole('link',{name:'Open patient A-001',exact:true}).click();
+  await expect(page).toHaveURL(/\/viewer\/96$/);
+  await expect(page.locator('.resident-viewer.is-active')).toHaveAttribute('data-ready','true');
+  expect(requests).toContain('/api/cases/96');expect(requests).not.toContain('/api/cases/A-001');
+  await expect(page.getByRole('link',{name:'Patient A-001',exact:true})).toHaveAttribute('aria-current','page');
+  await page.locator('.resident-viewer.is-active .scene canvas').evaluate(canvas=>(window as any).aliasedCanvas=canvas);
+  await page.getByRole('link',{name:'Home',exact:true}).click();
+  labels={...labels,'96':'Example patient'};
+  await page.getByRole('button',{name:'Refresh patients',exact:true}).click();
+  await expect(page.getByRole('link',{name:'Open patient Example patient',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Patient Example patient',exact:true})).toBeVisible();
+  const baseline=requests.length;
+  await page.getByRole('link',{name:'Patient Example patient',exact:true}).click();
+  await expect(page.locator('.resident-viewer.is-active')).toHaveAttribute('data-patient-id','96');
+  expect(await page.locator('.resident-viewer.is-active .scene canvas').evaluate(canvas=>canvas===(window as any).aliasedCanvas)).toBe(true);
+  expect(requests.slice(baseline).filter(path=>path.startsWith('/api/cases/'))).toEqual([]);
+  await page.getByRole('button',{name:'Close patient Example patient',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Patients',exact:true})).toBeVisible();
+  expect(errors).toEqual([]);
+});

@@ -1,7 +1,7 @@
 import type {Page} from '@playwright/test';
 
 /** Small but real WebGL/CPR/volume sessions, with separate data for each patient. */
-export async function residentPhantoms(page:Page,options:{jaggedLumen?:boolean}={}){
+export async function residentPhantoms(page:Page,options:{jaggedLumen?:boolean;aorta?:boolean}={}){
   const ids=['96','814','893','fourth'],shape=[64,32,64],n=shape.reduce((a,b)=>a*b,1),spacing=.5;
   const requests:string[]=[];
   const points=Array.from({length:33},(_,i)=>[0,0,-8+i*.5]);
@@ -19,12 +19,13 @@ export async function residentPhantoms(page:Page,options:{jaggedLumen?:boolean}=
     const base=`/api/cases/${id}/assets/`,affineLPS=[[spacing,0,0,-16],[0,spacing,0,-8],[0,0,spacing,-16],[0,0,0,1]];
     const volume={dimensions:shape,spacing:[spacing,spacing,spacing],origin:[-16,-8,-16],direction:[1,0,0,0,1,0,0,0,1],affineLPS,scalarType:'int16',ct:base+'ct',lumen:base+'lumen',cpe:base+'cpe',cpeDisplay:base+'display'};
     const feature={...volume,id:`feature-${id}`,name:`test_feature_${id}`,vessel:'LAD',startIJK:[0,0,0],minimum:-1,maximum:1,limit:1,balanced:[-1,0,1],values:base+'values',valid:base+'valid',axial:''};
-    const data={patientId:id,geometry:{shape,affineLPS},sampling:{widthPixels:50,resolutionMm:.5,pointSpacingMm:.5},vessels:{LAD:line,LCx:line,RCA:line},volumes:{LAD:volume,LCx:volume,RCA:volume},featureMaps:{LAD:[feature],LCx:[],RCA:[]},surfaces:{lumen_merged:{points:base+'points',cells:base+'cells',vertices:8,triangles:12}},axialVolume:{ct:base+'ct',labels:base+'labels',scalarType:'int16'}};
+    const data={patientId:id,geometry:{shape,affineLPS},sampling:{widthPixels:50,resolutionMm:.5,pointSpacingMm:.5},vessels:{LAD:line,LCx:line,RCA:line},volumes:{LAD:volume,LCx:volume,RCA:volume},featureMaps:{LAD:[feature],LCx:[],RCA:[]},surfaces:{lumen_merged:{points:base+'points',cells:base+'cells',vertices:8,triangles:12},...(options.aorta?{ascending_aorta:{points:base+'points',cells:base+'cells',vertices:8,triangles:12}}:{})},axialVolume:{ct:base+'ct',labels:base+'labels',scalarType:'int16'}};
     const assets:Record<string,ArrayBufferView>={ct,labels,lumen,cpe,display,values,valid,points:vertices,cells};
     return [id,{data,assets}] as const;
   }));
   await page.route('**/api/**',route=>{
     const path=new URL(route.request().url()).pathname;requests.push(path);
+    if(path==='/api/patient-labels')return route.fulfill({json:{labels:{}}});
     if(path==='/api/patients')return route.fulfill({json:{patients:ids.map(patientId=>({patientId,available:true,age:50,sex:'Man',cadRads:'Score 2',priRisk:.1,adjustedRisk:.08,stratum:'High'}))}});
     const match=/^\/api\/cases\/([^/]+)(?:\/assets\/(.+))?$/.exec(path),fixture=match&&fixtures.get(match[1]);
     if(!fixture)return route.fulfill({status:404,json:{detail:'Unknown phantom'}});

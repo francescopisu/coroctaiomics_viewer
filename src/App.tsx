@@ -14,13 +14,12 @@ import {type CprMarker} from './curvedMarker';
 import {loadAxialVolume,type AxialVolume} from './axialVolume';
 import {ResourceCache} from './resourceCache';
 import {AiPanel} from './AiPanel';
-import type {AiFeature} from './aiTypes';
 import {restoreView,saveView} from './viewState';
 import {attenuationBands} from './cpeVolumeData';
 import {useWindowLevel,type WindowLevel} from './useWindowLevel';
 
 const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.15,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:false,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
-export default function App({patientId,toolbarHost,active=true,onReady}:{patientId:string;toolbarHost:HTMLElement|null;active?:boolean;onReady?:(id:string)=>void}){
+export default function App({patientId,patientLabel,toolbarHost,active=true,onReady}:{patientId:string;patientLabel:string;toolbarHost:HTMLElement|null;active?:boolean;onReady?:(id:string)=>void}){
   const [data,setData]=useState<Case>(),[c,setC]=useState(()=>restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
   const latestControls=useRef(c);latestControls.current=c;
   useEffect(()=>()=>saveView(patientId,latestControls.current),[patientId]);
@@ -95,14 +94,6 @@ export default function App({patientId,toolbarHost,active=true,onReady}:{patient
   },[startupComplete,bootDone,downloads]);
   useEffect(()=>{if(bootDone)onReady?.(patientId);},[bootDone,onReady,patientId]);
   const line=data?.vessels[c.vessel];
-  const selectAiFeature=(feature:AiFeature)=>{
-    const map=data?.featureMaps[feature.vessel].find(f=>f.name.toLowerCase()===feature.mapName.toLowerCase());
-    if(!map)return;
-    setMapsVisible(true);
-    setC(old=>({...old,vessel:feature.vessel,index:old.vessel===feature.vessel?old.index:0,axialSlice:undefined,
-      straightAngle:old.vessel===feature.vessel?old.straightAngle:0,curvedAngle:old.vessel===feature.vessel?old.curvedAngle:0,
-      featureIds:{...old.featureIds,[feature.vessel]:map.id}}));
-  };
   return <>
     {active&&toolbarHost&&createPortal(<>
       <button ref={aiButton} className="ai-toggle" aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!bootDone}>Show AI report</button>
@@ -156,7 +147,7 @@ export default function App({patientId,toolbarHost,active=true,onReady}:{patient
         {c.render3d==='cpe'&&volumeStatus.phase==='error'&&<div className="volume-status" role="alert">{volumeStatus.message}<button onClick={()=>scene.current?.retryVolume()}>Retry</button></div>}
         {c.render3d==='cpe'&&volumeStatus.phase==='ready'&&<div className="volume-legend" aria-label="CPE CT attenuation bands" title="Display bands in native HU, not validated plaque or histological classifications. Colors apply only to saved CPE voxels; they are independent of the radiomic-map palette.">{attenuationBands.map(band=><span key={band.id} title={band.range}><i style={{background:band.color}}/>{band.label}</span>)}</div>}
         </div>
-      {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={active&&aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
+      {data&&<AiPanel key={data.patientId} patientId={data.patientId} patientLabel={patientLabel} open={active&&aiOpen} onClose={closeAi}/>}
       </section>
       <section className={`recon${windowLevel.windowing?' is-windowing':''}`} aria-label="Coronary reconstructions" {...windowLevel.handlers}><div className="cpr-render" ref={cprHost}/>{[0,1].map(view=><div key={view} className={`cpr-hit ${view===0?'straight':'curved'}`} aria-label={view===0?'Straightened reconstruction':'Curved CPR'} title="Right-drag: left/right adjusts window width; up/down adjusts level."
         onPointerDown={e=>{if(!volume||e.button!==0)return;e.currentTarget.setPointerCapture(e.pointerId);drag.current={x:e.clientX,y:e.clientY,angle:view===0?c.straightAngle:c.curvedAngle,view};}}
@@ -178,7 +169,7 @@ export default function App({patientId,toolbarHost,active=true,onReady}:{patient
   </main>
     {!bootDone&&!error&&<div className={`initial-loader${bootPercent===100?' complete':''}`}>
       <div className="initial-progress" role="progressbar" aria-label="Loading viewer" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bootPercent}>
-        <div className="initial-progress-patient">Patient {patientId}</div><div className="initial-progress-label"><span>Loading…</span><span>{bootPercent}%</span></div>
+        <div className="initial-progress-patient">Patient {patientLabel}</div><div className="initial-progress-label"><span>Loading…</span><span>{bootPercent}%</span></div>
         <div className="initial-progress-track"><div style={{width:`${bootPercent}%`}}/></div>
       </div>
     </div>}

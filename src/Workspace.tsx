@@ -1,6 +1,5 @@
 import {lazy,Suspense,useCallback,useEffect,useState} from 'react';
 import {PatientBrowser} from './PatientBrowser';
-import {AppHeader} from './AppHeader';
 import {PatientTabs} from './PatientTabs';
 const Viewer=lazy(()=>import('./App'));
 const address=()=>location.pathname+location.search;
@@ -11,6 +10,17 @@ const residentLimit=3;
 type Resident={id:string;ready:boolean};
 export default function Workspace(){
   const [url,setUrl]=useState(address);
+  const [labels,setLabels]=useState<Record<string,string>>(),[labelsError,setLabelsError]=useState(''),[labelsRevision,setLabelsRevision]=useState(0);
+  const refreshLabels=useCallback(()=>setLabelsRevision(value=>value+1),[]);
+  useEffect(()=>{
+    const abort=new AbortController();setLabelsError('');
+    fetch('/api/patient-labels',{signal:abort.signal,cache:'no-store'}).then(async response=>{
+      if(!response.ok)throw new Error('Patient names unavailable. Restart the backend after updating, then retry.');
+      const value=await response.json();if(!value.labels||typeof value.labels!=='object'||Array.isArray(value.labels)||Object.values(value.labels).some(label=>typeof label!=='string'))throw new Error('Invalid patient names response.');
+      return value.labels as Record<string,string>;
+    }).then(setLabels).catch(error=>{if(error.name!=='AbortError')setLabelsError(error.message);});
+    return()=>abort.abort();
+  },[labelsRevision]);
   const patientId=patientAt(url);
   const [openedPatients,setOpenedPatients]=useState<string[]>(()=>patientId?[patientId]:[]);
   const [toolbarHost,setToolbarHost]=useState<HTMLDivElement|null>(null);
@@ -40,17 +50,18 @@ export default function Workspace(){
     setOpenedPatients(remaining);
     setResidents(previous=>previous.filter(item=>item.id!==id));
   };
+  if(!labels)return <main className="patient-browser"><div className="patient-empty" role={labelsError?'alert':'status'}>{labelsError||'Loading patients…'}{labelsError&&<button onClick={refreshLabels}>Retry</button>}</div></main>;
   return <>
-    <AppHeader/>
     <header className="toolbar workspace-toolbar" aria-label="Workspace controls">
-      <PatientTabs patients={openedPatients} activePatient={patientId} home={homeAddress()} homeActive={list} onNavigate={navigate} onClose={closePatient}/>
+      <PatientTabs patients={openedPatients} labels={labels} activePatient={patientId} home={homeAddress()} homeActive={list} onNavigate={navigate} onClose={closePatient}/>
       <div className="workspace-toolbar-actions" ref={setToolbarHost}/>
     </header>
-    {list&&<PatientBrowser url={url} readyPatients={residents.filter(item=>item.ready).map(item=>item.id)} onNavigate={navigate} onQuery={to=>{history.replaceState(history.state,'',to);setUrl(address());}}/>}
+    {labelsError&&<div className="patient-label-error" role="alert">{labelsError}<button onClick={refreshLabels}>Retry</button></div>}
+    {list&&<PatientBrowser labels={labels} onRefreshLabels={refreshLabels} onNavigate={navigate}/>}
     {!list&&!match&&<main className="patient-browser"><div className="patient-empty">Page unavailable.<button onClick={()=>navigate('/')}>Patients</button></div></main>}
     {residents.map(item=><div key={item.id} className={`resident-viewer${item.id===patientId?' is-active':''}`} data-patient-id={item.id} data-ready={item.ready} aria-hidden={item.id!==patientId} inert={item.id!==patientId}>
       <Suspense fallback={<main className="patient-browser"><div className="patient-empty" role="status">Opening viewer…</div></main>}>
-        <Viewer patientId={item.id} toolbarHost={toolbarHost} active={item.id===patientId} onReady={markReady}/>
+        <Viewer patientId={item.id} patientLabel={labels[item.id]??item.id} toolbarHost={toolbarHost} active={item.id===patientId} onReady={markReady}/>
       </Suspense>
     </div>)}
   </>;
