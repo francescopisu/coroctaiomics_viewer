@@ -18,7 +18,7 @@ import {restoreView,saveView} from './viewState';
 import {attenuationBands} from './cpeVolumeData';
 import {useWindowLevel,type WindowLevel} from './useWindowLevel';
 
-const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.15,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,aortaOpacity:.6,lumen:true,centerline:false,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
+const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:1,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,lumen:true,centerline:false,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
 export default function App({patientId,patientLabel,toolbarHost,active=true,onReady}:{patientId:string;patientLabel:string;toolbarHost:HTMLElement|null;active?:boolean;onReady?:(id:string)=>void}){
   const [data,setData]=useState<Case>(),[c,setC]=useState(()=>restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
   const latestControls=useRef(c);latestControls.current=c;
@@ -107,9 +107,9 @@ export default function App({patientId,patientLabel,toolbarHost,active=true,onRe
         <label title="Straightened CT only. Filters undersampled pixels; the effect can be very subtle at high display resolution. Does not remove geometric background warping."><input type="checkbox" checked={c.cprAntialias} onChange={e=>update('cprAntialias',e.target.checked)}/>Pixel antialiasing</label>
         <label><input type="checkbox" checked={c.smoothEdges} onChange={e=>update('smoothEdges',e.target.checked)}/>Smooth edges</label>
         <label><input type="checkbox" disabled={!data?.surfaces.ascending_aorta} checked={c.aorta} onChange={e=>update('aorta',e.target.checked)}/>Ascending aorta</label>
-        <label className="slider">Aorta opacity<input aria-label="Aorta opacity" type="range" min="0" max="1" step=".01" value={c.aortaOpacity} onChange={e=>update('aortaOpacity',+e.target.value)}/></label>
+        <label className="slider">Aorta opacity<input aria-label="Aorta opacity" type="range" min="0" max="1" step=".01" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
         <label><input type="checkbox" checked={c.lumen} onChange={e=>update('lumen',e.target.checked)}/>Lumen</label>
-        <label className="slider">Opacity<input aria-label="Lumen opacity" type="range" min="0" max="1" step=".01" value={c.lumenOpacity} onChange={e=>update('lumenOpacity',+e.target.value)}/></label>
+        <label className="slider">Lumen opacity<input aria-label="Lumen opacity" type="range" min="0" max="1" step=".01" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
         <label><input type="checkbox" checked={c.centerline} onChange={e=>update('centerline',e.target.checked)}/>Centerlines</label>
         {vessels.map(v=><div className="layer-row" key={v}><label><input type="checkbox" checked={c.cpe[v]} onChange={e=>update('cpe',{...c.cpe,[v]:e.target.checked})}/>{v} CPE</label><input type="color" aria-label={`${v} CPE color`} value={c.colors[v]} onChange={e=>update('colors',{...c.colors,[v]:e.target.value})}/></div>)}
         <label className="slider">CPE opacity<input aria-label="CPE opacity" type="range" min="0" max=".85" step=".01" value={c.cpeOpacity} onChange={e=>update('cpeOpacity',+e.target.value)}/></label>
@@ -139,7 +139,7 @@ export default function App({patientId,patientLabel,toolbarHost,active=true,onRe
           <details className="volume-settings"><summary aria-label="CPE volume settings">Settings</summary><div className="volume-menu">
             <label>Density<input aria-label="CPE volume density" type="range" min="0" max="2" step=".05" value={c.volumeDensity} onChange={e=>update('volumeDensity',+e.target.value)}/></label>
             {attenuationBands.map(band=><label key={band.id} title={band.range}>{band.label}<input aria-label={`${band.label} opacity`} type="range" min="0" max="2" step=".05" value={c.volumeBands[band.id]} onChange={e=>update('volumeBands',{...c.volumeBands,[band.id]:+e.target.value})}/></label>)}
-            <label>Context<input aria-label="CPE anatomical context opacity" type="range" min="0" max="1" step=".05" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
+            <label>Context<input aria-label="CPE anatomical context opacity" type="range" min="0" max="1" step=".01" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
           </div></details>
         </div>}
         <div className="scene" ref={sceneHost}/>{!ready&&<span className="loading">Loading…</span>}
