@@ -1,6 +1,6 @@
 # Coronary / CPE viewer
 
-Standalone browser viewer with a **patient browser** and one active imaging case at a time. Patients **1, 8, 1718 and external P001** are registered and prepared. Five linked views: 3D coronary overview on the left; independently rotating straightened reconstruction and curved CPR in the center; orthogonal cross-section above native axial CCTA on the right. Vessel-specific radiomic feature maps can overlay the CCTA. All source medical data and the CoroCTAiomics pipeline are read-only. Generated files stay here.
+Standalone browser viewer with a **patient browser**, one visible imaging case and up to three resident patient sessions. Patients **1, 8, 1718 and external P001** are registered and prepared. Five linked views: 3D coronary overview on the left; independently rotating straightened reconstruction and curved CPR in the center; orthogonal cross-section above native axial CCTA on the right. Vessel-specific radiomic feature maps can overlay the CCTA. All source medical data and the CoroCTAiomics pipeline are read-only. Generated files stay here.
 
 ## Local startup
 
@@ -13,7 +13,7 @@ cd coronary_viewer
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 npm ci
-.venv/bin/python -m backend.prepare
+./prepare.sh
 npm run build
 .venv/bin/python -m uvicorn backend.server:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
@@ -24,54 +24,102 @@ For frontend development, run the backend in one terminal and `npm run dev` in a
 
 The first page load shows a horizontal 0–100% indicator. Metadata completes the first 2%; decoded bytes for all 3D meshes, all three vessels' native masks/display fields and the single shared native CT/packed-label stack account for the next 96%. Expected sizes come from geometry, so gzip transfer sizes do not cause percentage overshoot. Download streams copy directly into their final buffers. The final 2% completes after all initial views are ready and two animation frames have passed; 100% remains briefly visible before the overlay fades. Controls are inert until startup completes. All vessel data are ready before the controls become active. A feature map loads on its first selection, then remains cached for the current case. Failed startup requests expose the normal error/Reload control instead of falsely reaching 100%.
 
-## Data configuration and cache
+## Patients: one registry, one command
 
-`config/catalog.local.json` is the explicit case allowlist: its `cases` array names JSON configuration files relative to the catalogue directory (absolute local configuration paths also work). It currently includes `case.local.json` (patient 1718) and `cases/1.json`, `cases/8.json`, `cases/P001.json`. Each file contains the same source-path schema. `outputRoot` accepts either a patient-named directory or `{patientId}/output`, while retaining the patient-ID check. Override the catalogue location with `CORONARY_CATALOG_CONFIG`. IDs must be unique; no case is exposed merely because a cache or clinical record exists. The frontend contains no `/Volumes/` paths.
+**Edit only `config/viewer.local.json` to choose which patients appear.** Its
+`patients` array is the allowlist; a cached folder or an eCRF row alone never
+exposes another patient. Existing patients 1718, 1, 8 and P001 have been migrated.
 
-The root page and `/patients` show a compact searchable/sortable table with age/sex, CAD-RADS, both model probabilities and Risk category (from the PRI-only model). Search, sort and filter are reflected in the URL and survive returning from the viewer. The list downloads only `/api/patients` metadata: no meshes, CT buffers or feature maps. Its AI summaries come from the validated local AI reference, only for registered cases; missing clinical records/AI data show dashes. A registered case with missing/stale images is visibly unavailable. Refresh rechecks the catalogue. The large VTK/viewer module is loaded only when opening a patient.
+For an internal patient, add one entry:
 
-Click a row, or focus the patient link and press Enter, to open `/viewer/{patientId}`. The toolbar and loading screen identify the patient; **← Patients** returns to the preserved list. Loading can be cancelled from its own return control or browser Back. Only one viewer is mounted: navigating away aborts downloads, destroys scenes/WebGL objects and releases case buffers/maps. AI state is mounted with that patient and is never reused across cases. Vessel, centerline index, native axial slice and both CPR angles are remembered per patient in session storage; reopening/reloading restores those controls after validating/clamping them against the selected case. Imaging data load again when reopening, rather than retaining several patients' large CT buffers.
+```json
+{"id": "96", "ct": "/path/to/96.nii.gz", "output": "/path/to/pipeline/output/96"}
+```
 
-To register another patient:
+For an external patient, the image and output can be anywhere. Add a clinical
+JSON when you need to supply history or acquisition/model inputs yourself:
 
-1. Create `config/cases/{patientId}.json` with matching CT/output/centerline paths and optional feature-map directory, following the existing case files.
-2. Add that filename to `config/catalog.local.json`.
-3. Prepare just that patient with `.venv/bin/python -m backend.prepare --case {patientId}`.
-4. Refresh the patient list. No frontend rebuild or case-selection writes are needed.
+```json
+{"id": "P001", "ct": "/somewhere/P001.nii.gz", "output": "/elsewhere/P001/output", "clinical": "patients/P001.json"}
+```
 
-`config/case.local.json` remains the default for preparation without `--case`, inspection and the legacy `/api/case` diagnostic endpoint. `CORONARY_CASE_CONFIG=/absolute/path/to/config.json` switches to single-case mode when no explicit `CORONARY_CATALOG_CONFIG` is supplied. This supports existing isolated workflows. Choosing a patient in the UI never edits either configuration file. Existing imaging/AI endpoints now enforce catalogue membership and each case's own fingerprint; changing one case does not invalidate another. Keep patient IDs unique if editing the default configuration while using the catalogue.
+Then run:
 
-### Updating one case's CCTA
+```sh
+./prepare.sh          # All registered patients; unchanged images are reused
+./prepare.sh 96       # Just this patient (multiple IDs also work)
+./prepare.sh --check  # Check paths and AI inputs without generating images
+```
 
-1. Update **all matching case fields** in `config/case.local.json`: `patientId`, `ct`, `outputRoot`, each `centerlineFiles` entry, and `radiomicFeatureMaps` if used. Centerline branch suffixes can differ between patients; inspect the actual `labeling/` directory. For case 1718 the verified files are `1718_LAD_1.csv`, `1718_LCx_2.csv`, and `1718_RCA_1.csv`.
-2. From `coronary_viewer/`, run `.venv/bin/python -m backend.prepare` for the default, or `.venv/bin/python -m backend.prepare --case {patientId}` for another catalogue entry. This validates alignment and regenerates only that case's cache when needed.
-3. **Reload the browser.** No frontend rebuild or server restart is required for subsequent data-only changes.
+Return to the patient list and click **Refresh** after adding a prepared case.
+Hard-refresh the browser after replacing images or clinical inputs, so the
+resident viewer/AI result is released. Adding patients or editing JSON needs no
+frontend build. Restart the backend once after installing this code refactor.
 
-Editing the JSON is not a live image replacement. The viewer requests `/api/cases/{patientId}` from its URL, returning only that case’s prepared HTTP URLs. The API rejects a missing or stale cache with a preparation instruction instead of silently serving a previous patient. A configuration digest covers that case's JSON and pipeline defaults. Mixed patient IDs, CCTA filenames, output directories and centerline filenames are rejected during preparation. The backend’s axial memory-map cache includes patient ID and preparation revision, so rebuilding a case reopens its arrays. Configuration/source edits during preprocessing abort manifest publication.
+The pipeline structure supplies the rest:
 
-The discovery code parses literal assignments from the pipeline's `config/defaults.py` with Python's AST. It does not import the pipeline, initialize torch, or edit global defaults. Directory names and MPR settings come from that file. CPE discovery refuses a configuration other than `periluminal_r4`. Neither `periluminal` nor `periluminal_r4_PCAT` is used.
+- `postprocessing/{id}_lumen_mask_post_{merged,left,right}.nii.gz`
+- `periluminal_r4/{id}_{LAD,LCX,RCA}_periluminal.nii.gz`
+- `labeling/{id}_{LAD,LCx,RCA}_*.csv` and matching `.mrk.json`
+- Optional `cardiac_structures/asc_aorta_shell.nii.gz`
+- Optional `radiomics_r4_iso/maps` and scalar `radiomics_r4_iso/{id}_radiomics.csv`
 
-Preparation fingerprints the source paths, sizes, modification times and configuration. An unchanged case reuses its cache. `python -m backend.prepare --force` regenerates display assets; it never writes source files. Missing files fail explicitly, including a missing `/Volumes/X9Pro` mount. An existing prepared cache can be viewed without the external drive; it is a local derivative of the configured case, never substitute data.
+Unique centerlines are selected automatically. If there are several branches,
+set only the ambiguous vessel in an optional `centerlines` object, e.g.
+`"centerlines": {"LAD": "96_LAD_2.csv"}`. Branch anatomy is never guessed.
+Legacy map locations can use `"maps": "/path/to/maps"`; scalar CSVs can use
+`"radiomicsCsv": "/path/to/file.csv"`. Most standard outputs need neither.
+All relative paths resolve from the registry's directory, including clinical
+JSON paths. `--config /path/to/viewer.json` selects an alternative registry.
 
-The cache retains native marching-cubes meshes and separate smoothed display meshes for the postprocessed lumen masks, three authoritative CPE masks, and ascending aorta shell. Display surfaces use VTK windowed-sinc smoothing (40 iterations, passband 0.03, normalized coordinates, boundary/feature/nonmanifold smoothing off), with consistent point normals and Phong shading. Connectivity is retained; there is no mesh decimation or source-mask overwrite. The manifest records maximum vertex displacement. For case 1718 it is 0.37–0.48 mm, and enclosed volume changes are below 0.7%. Gear menu → Smooth meshes restores the original mesh when disabled. This is an established VTK display method, not a claim to reproduce Elucid’s proprietary implementation. Optional source VTPs are inspected but not used for display.
+The registry's `pipelineRoot`, `clinicalSources` and `ai` sections are one-time
+setup. **They do not need editing for each patient.** Full eCRF CSVs provide
+patient inputs; the fixed model-reference subsets define cohort comparisons.
+The original PRI reference distribution lives in `resources/ai/`, not among
+patient configuration files. Model/preprocessing exports live in `cache/ai/`.
+There are no separate case files, catalogue file or AI config to maintain.
 
-Interactive CPR shares the full native CT buffer and its VTK image with axial viewing. It downloads and retains all three vessels' lumen/CPE mask crops and smooth display fields during startup. CT crop assets remain diagnostic references and are no longer downloaded by the viewer. The CPU sampler converts crop indices to the shared native CT grid, preserving trilinear sampling, native HU, crop boundary behavior and physical LPS coordinates. Masks retain their original crop geometries and interpolation policies. The two central viewports use one WebGL context; their CT texture remains the same object when the selected vessel changes. Clicking the 3D model or changing the vessel selector switches resident data without a request or a Loading placeholder. All resources are released when the case closes. Startup retains more mask data, while sharing CT avoids three duplicate CT crops. For case 1718, resident vessel masks/display fields total about 426 MB and the shared native CT/packed-label stack about 270.5 MB before textures and meshes. No spatial downsampling is used; integer HU are compacted losslessly and fractional HU retain Float32.
+### Clinical information and manual overrides
 
-For axial viewing, preprocessing exports the complete native CT stack and a packed mask stack in x-fast voxel order under `cache/{patientId}/`. The browser downloads both once during the initial progress bar and retains them in memory for every vessel and native k slice. CT is compacted to Int16 only when all HU are preserved exactly; fractional HU retain Float32. Slice CT arrays are zero-copy views into the resident stack, and lumen/CPE masks are decoded locally. The selected radiomic map also supplies native axial values, support and display boundaries directly from its already loaded crop. There are no per-slice HTTP requests, transient Loading frames, or a 16-slice eviction limit during navigation. Case 1718 adds about 270.5 MB of resident axial CT/packed labels. Existing valid caches are upgraded by `python -m backend.prepare` using their saved native arrays without regenerating meshes. The read-only `/api/cases/{patientId}/axial/{k}` and feature axial endpoints remain available for diagnostics and sampling checks; the internal NumPy arrays remain unlisted. Earlier fixed reformats are diagnostic references.
+Internal patients are matched by Patient ID in the full derivation/validation
+eCRFs configured under `clinicalSources` (`df_der_no_hf.csv` / `df_cpc_no_hf.csv`).
+Only reporting fields and model predictors are read; TIME/EVENT never enter
+patient responses or predictions. CSVs are cached in memory and reread if they
+change. An already exported cohort record remains available if storage is offline.
+
+For an external patient, copy **`config/patients/_template.json`**, change its
+`patientId`, enter recorded values, and reference it with `clinical` in the
+registry. Use `Man`/`Woman`, `Yes`/`No`, numeric kVp/RF-CL/calcium values, and
+recorded CAD-RADS/SS45. `null` means unknown; confirmed absence of chest pain is
+`"Type of chest pain ": "No chest pain"`. RF-CL and SS45 are not inferred from
+other fields by this loader. Missing model inputs make the affected prediction
+unavailable while imaging remains usable.
+
+The same `clinical` JSON can override an internal patient's eCRF record: include
+**only the fields to replace**. Omitted keys retain eCRF values; explicit null
+clears a value. Patient IDs must match. External scalar feature values are read
+from the output's radiomics CSV; voxelwise maps do not replace scalar predictors.
+The eight model feature columns can also be supplied explicitly in a manual JSON.
+
+Clinical edits do not invalidate CT/mesh caches or refit models. Adding an
+external patient never changes reference distributions, thresholds or percentiles.
+Source data, CSVs, masks and upstream pipeline files remain read-only; generated
+images stay under `cache/{id}`. Source descriptors permit a prepared viewer to
+open with source storage disconnected. Replacing images requires preparation.
 
 ### Radiomic feature maps
 
-The optional `radiomicFeatureMaps` configuration key points to a directory containing vessel subdirectories `LAD`, `LCx`, and `RCA`. `LM-LAD` is accepted as an alias for `LAD`; having both is rejected as ambiguous. Each directory's `.nii.gz` files appear only for that vessel, using their original feature names. macOS `._` resource forks are ignored. Case 1718 has three LAD, two LCx and three RCA maps. A flat pipeline map folder is also supported: `{patientId}_{LAD|LCX|RCA}_{feature}.nii.gz`. The case prefix is checked and removed from display names; mixed patient IDs, mixed flat/folder layouts and duplicate maps fail explicitly. P001 uses this layout with 3 LAD, 4 LCx and 4 RCA maps, without reorganizing its source files.
+The optional `maps` configuration key points to a directory containing vessel subdirectories `LAD`, `LCx`, and `RCA`. `LM-LAD` is accepted as an alias for `LAD`; having both is rejected as ambiguous. Each directory's `.nii.gz` files appear only for that vessel, using their original feature names. macOS `._` resource forks are ignored. Case 1718 has three LAD, two LCx and three RCA maps. A flat pipeline map folder is also supported: `{patientId}_{LAD|LCX|RCA}_{feature}.nii.gz`. The case prefix is checked and removed from display names; mixed patient IDs, mixed flat/folder layouts and duplicate maps fail explicitly. P001 uses this layout with 3 LAD, 4 LCx and 4 RCA maps, without reorganizing its source files.
 
 After changing this directory or its files, run preparation and reload the browser. Preparation fingerprints every discovered map and requires its shape and physical affine to match the CCTA. A mismatched map fails explicitly rather than guessing registration. Display derivatives keep native voxel spacing and crop only the bounding box around the authoritative vessel CPE. Values are stored as Float32; original NIfTI files remain untouched. Per-feature 2nd/50th/98th percentiles are calculated from finite CPE voxels for the optional display stretch. Support is the corresponding `periluminal_r4` CPE intersected with finite feature values. Zero is valid, including zero-valued CPE voxels; NaN/Inf and voxels outside the CPE are transparent. The manifest records in-CPE extrema, zero/invalid counts, and nonzero values outside the CPE within the crop. Some supplied case-1718 maps have nonzero values outside the current CPE, so explicit clipping is necessary.
 
-Choose a map using the toolbar selector; **No feature map** restores the existing CPE display. Selection is remembered separately for each vessel. Each map is fetched once when first selected and retained for the current case, including its VTK images; returning to that map or vessel restores it without another download or a map-loading placeholder. Concurrent requests for the same map share one promise, and closing the case aborts pending requests and releases cached resources. The provided 256-color green–white–pink palette uses stops `#3b9b38`, `#4daf4a`, `#ffffff`, `#f781bf`, `#e66aac`.
+Use **Show radiomic maps** in the second toolbar row to reveal the vessel-specific feature selector and display the first available map. Toggle it off to hide maps while retaining the selected feature. Vessel selection, map selection and the color scale share that row. Selection is remembered separately for each vessel. Each map is fetched once when first selected and retained for the current case, including its VTK images; returning to that map or vessel restores it without another download or a map-loading placeholder. Concurrent requests for the same map share one promise, and closing the case aborts pending requests and releases cached resources. The provided 256-color green–white–pink palette uses stops `#3b9b38`, `#4daf4a`, `#ffffff`, `#f781bf`, `#e66aac`.
 
 **Balanced** is the default display scale: each feature's 2nd percentile maps to green, its median to white, and its 98th percentile to pink. Separate linear stretches below/above the median give both halves of the distribution visible contrast; extrema beyond the percentile endpoints are saturated for display only. The three legend labels are actual feature values, including the white median. Green means lower relative values in this mode, and does not imply negative values. Ties, zero padding within the CPE and constant maps can prevent perfectly equal color counts. **Raw zero** preserves the original sign interpretation and symmetric `[-M, +M]` range, with `M = max(abs(min), abs(max))` (1 for an all-zero map). Zero is white in Raw zero; a positive-only feature legitimately uses white/pink. No source values, features, inference or analytical masks are changed. Scale statistics remain fixed during navigation and rotation.
 
 The selected feature overlays both CPRs, the fixed orthogonal slice, native axial CCTA, and the optional 3D cross-sectional plane. Feature scalars are interpolated before color mapping: trilinearly in the CPR and orthogonal plane, bilinearly during axial display enlargement. Interpolation is normalized by finite CPE support, so masked-out background and NaN neighbours do not dilute boundary values toward zero. CPU and GPU share the same scale parameters and colormap. The GPU stores scalar/support channels, divides by interpolated support, and applies its color transfer function afterward. A small OpenGL CPR view-node extension supplies the final color stage and rebuilds it when scale parameters change; vtk.js 37.4.1’s CPR renderer does not apply the generic shader-replacement hook. Its native coordinate/orientation/sampling stages are retained. Original finite zeros remain valid. The 3D vessel surfaces retain territory colors.
 
-**CPE masks** in the toolbar independently toggles all binary CPE display surfaces, fills and contours, preserving vessel-specific selections in the gear menu. Feature maps remain visible when masks are hidden. **Gear menu → Map opacity** adjusts the map independently. Rotation resamples the map while orthogonal/axial orientation remains fixed. The color-scale legend shows the feature name and numeric anchors.
+**Gear menu → CPE masks** independently toggles all binary CPE display surfaces, fills and contours, preserving vessel-specific selections in the gear menu. Feature maps remain visible when masks are hidden. **Gear menu → Map opacity** adjusts the map independently. Rotation resamples the map while orthogonal/axial orientation remains fixed. The color-scale legend shows the feature name and numeric anchors.
 
 **Gear menu → Smooth edges** controls a separate boundary display derivative, enabled by default. A physical Gaussian kernel with sigma 0.35 mm produces a continuous CPE field; its 0.5 contour, antialiased coverage and rounded vector paths replace voxel steps and suppress thin spurs/small specks. The map is clipped to the same display field. Smoothing can hide small source-mask fragments or shift the displayed edge; disable Smooth edges to inspect the original voxel support. Binary sampling and source NIfTI labels stay unchanged. Display fields are generated independently in each native vessel crop, with halo padding in feature crops.
 
@@ -85,15 +133,15 @@ The optional ascending aorta is discovered at `outputRoot/cardiac_structures/asc
 - Select LAD, LCx or RCA in the toolbar or click a vessel in 3D. Clicking axial CCTA selects the nearest centerline sample in physical space.
 - The **gear icon** at the far right opens layer visibility, opacity, colors, the optional 3D plane and **W/L** controls for the shared CT window. **Reset** restores the camera and zero rotation in both central views. The former Layers text button and Export button are removed.
 
-The imaging workspace keeps its minimal toolbar, panel names, rotation angle, orientation letters and scale references. **AI** opens a compact nonmodal results panel over the lower-left view. Opening it preserves the size, camera and current position of all five views. Close with ×, the AI button or Escape; tab navigation supports arrow keys. Scientific interpretation and implementation details are documented here.
+The imaging workspace keeps its minimal toolbar, panel names, rotation angle, orientation letters and scale references. **Show AI report**, right-aligned beside the gear menu, opens a compact nonmodal results panel over the lower-left view. Opening it preserves the size, camera and current position of all five views. Close with ×, the AI button or Escape; tab navigation supports arrow keys. Scientific interpretation and implementation details are documented here.
 
 ### CPE volume rendering
 
-The 3D panel opens directly in **CPE volume** with Balanced transfer functions and Unlit lighting. This ray-casts native CCTA voxels within the union of the saved CPE masks. It does not color the outer surface mesh, generate tissue segmentations, or alter the source images. The mode uses the already resident CT and packed native labels: no extra CT download, preparation or restart is required. During initial loading, a cancellable slice-batched operation packs a native-resolution bounding crop. The initial loader completes after the volume is ready; changing the volume settings does not retrigger it. Buffers and rendering objects are disposed when leaving the patient.
+The 3D panel opens in **anatomy** mode with ascending aorta and lumen, while CPE masks and radiomic maps start hidden. **Show periluminal envelopes** toggles both the CPE volume rendering and the binary masks in the linked image panels. Enabling it uses Balanced transfer functions and Unlit lighting to ray-cast native CCTA voxels within the union of the saved CPE masks. It does not generate tissue segmentations or alter source images. Native CT and labels are already resident, so the first toggle needs no additional imaging download. Its cancellable volume packing runs on demand with an inline status; it never restarts the initial loader. Toggling off returns to anatomy and hides the masks, retaining prepared rendering resources for reuse. Radiomic maps have a separate toggle. Up to three loaded patient sessions remain resident as described below.
 
 **Settings** keeps only overall density, the four HU-band opacity gains and anatomical context opacity. Defaults match the supplied reference: density **0.9**, Fat range **1.05**, Low HU **2**, Intermediate **0**, High HU **2**, context **0.15**. The Anatomy selector, preset/lighting selectors and Cut at section control are removed from the interface. Alternative presets, lighting modes and anatomical rendering remain available internally; cutaway clipping is removed. Band ranges are Fat range (−190…−30 HU), Low HU (−30…30 HU), Intermediate (30…350 HU) and High HU (≥350 HU). The attenuation transfer functions have short continuous transitions between bands. They are independent of the CCTA window/level and the green–pink radiomic colormap. The legend's hover text gives the ranges. These are illustrative display bands, **not validated plaque composition, histology, fat classification or inflammation labels**. Contrast, kVp and partial volume influence attenuation; high HU can include contrast contamination as well as calcium. Only material actually present in the CPE can be shown. See the [SCCT quantitative CCTA consensus](https://pubmed.ncbi.nlm.nih.gov/38849237/).
 
-The native CT is packed as two Float32 channels: **HU × support** and **support**. Mask support is derived from finite CT and the original CPE bits, explicitly excluding the lumen. Trilinearly sampled HU is reconstructed by dividing by interpolated support *before* color/opacity lookup; coverage then scales optical depth rather than acting as a second material. Thus transparent background and voxels in another hidden territory cannot dilute boundary HU, create artificial low-attenuation rims or bleed dense structures into the rendered region. The original native CT and labels are untouched. Per-vessel CPE checkboxes in the gear menu select included territories; their union avoids double-counting overlapping CPEs. The global **CPE masks** button continues to control binary surfaces/2D fills, independently of the CT volume. In volume mode, the colored CPE surface shells are suppressed and lumen/aorta/centerlines use the context-opacity multiplier. The existing anatomical renderer remains the internal fallback if no finite CPE voxels are available, with an inline retry message.
+The native CT is packed as two Float32 channels: **HU × support** and **support**. Mask support is derived from finite CT and the original CPE bits, explicitly excluding the lumen. Trilinearly sampled HU is reconstructed by dividing by interpolated support *before* color/opacity lookup; coverage then scales optical depth rather than acting as a second material. Thus transparent background and voxels in another hidden territory cannot dilute boundary HU, create artificial low-attenuation rims or bleed dense structures into the rendered region. The original native CT and labels are untouched. Per-vessel CPE checkboxes in the gear menu select included territories; their union avoids double-counting overlapping CPEs. The **CPE masks** control inside the gear menu can also adjust binary surfaces/2D fills independently of the CT volume. In volume mode, the colored CPE surface shells are suppressed and lumen/aorta/centerlines use the context-opacity multiplier. The existing anatomical renderer remains the internal fallback if no finite CPE voxels are available, with an inline retry message.
 
 Cinematic lighting uses vtk.js composite ray casting with a warm key/cool fill, volumetric scattering and mask-aware shadow rays; Surface/AO uses local ambient occlusion, and Unlit exposes the attenuation colors without illumination. This is an interactive **cinematic-style approximation**, not Siemens' Monte Carlo path tracer. A small vtk.js 37.4.1 OpenGL factory extension fixes the stock multicomponent shadow/AO lookups to respect CPE support and the appropriate transfer-function rows, and skips empty samples. No voxels outside CPE cast volume shadows. Quality is reduced during interaction and returns to full resolution when stationary. The render-engine capture helpers remain internal; there is no Export control in the viewer.
 
@@ -103,71 +151,47 @@ Validation includes native HU/oblique geometry/source-immutability checks, cance
 
 ### AI patient summary
 
-The AI panel shows the configured patient's **PRI-only** and **adjusted** 4-year MACE probabilities and the **Risk category** derived from the PRI-only model. Patient, Features and Cohort tabs keep secondary information separate from the persistent predictions. Results load only on first opening; reopening the panel uses the resident result. AI errors/retry stay inside this panel and do not interrupt imaging. The AI overlay leaves all imaging views interactive.
+The AI panel shows the configured patient's **PRI-only** and **adjusted** 4-year MACE probabilities and the **Risk category** derived from the PRI-only model. Patient, Features and Cohort tabs keep secondary information separate from the persistent predictions. Results load only on first opening; reopening the panel uses the resident result. AI errors/retry stay inside this panel and do not interrupt imaging. The AI report fills the left 3D region; the four linked image views remain interactive. Closing the report restores the cached 3D scene without reloading images.
 
 - **Patient:** recorded age, sex, ESC RF-CL percentage/class, full CAD-RADS, Agatston score, smoking, hypertension, diabetes, dyslipidemia, dyspnea, chest-pain presentation, CAD family history and BMI. The stored likelihood/class are displayed without recalculation. Unknown, absent and explicitly unspecified information is preserved; none is interpreted as a negative finding. Family history is not a separate Cox predictor; it contributes to RF-CL when that value is calculated from its components. The other report-only fields do not enter the models. The adjusted model uses the original continuous `Clinical Likelihood` and binary `SS45`, which is a separate field from full CAD-RADS.
-- **Features:** all eight native patient-level radiomic values, grouped by vessel, alongside their derivation-cohort median, interquartile range (P25–P75) and empirical patient percentile. This tab widens the overlay to fit full feature names and uses single-line rows with content-sized height, showing all eight features without scrolling at desktop viewport sizes. Its toolbar contains only the Model selector; the derivation count stays in the Cohort tab. References use finite native values from derivation patients only, before harmonization/scaling; validation patients never enter these distributions. Display values use four significant digits (IQR limits use three); hover preserves the full precision. HRs follow the chosen PRI-only/adjusted model; directional arrows are omitted. A † marks 95% intervals including 1; hover or focus an HR for its full interval and interpretation. These HRs are per training SD after preprocessing, conditional on the other model predictors, not local voxel risk. Clicking a feature selects its available vessel/map in the viewer. Map colors retain their existing numerical meaning.
+- **Features:** all eight native patient-level radiomic values, grouped by vessel, alongside their derivation-cohort median, interquartile range (P25–P75) and empirical patient percentile. This tab stays within the left region, adapting feature-name wrapping and compact value/reference rows to the available width. Its toolbar contains only the Model selector; the derivation count stays in the Cohort tab. References use finite native values from derivation patients only, before harmonization/scaling; validation patients never enter these distributions. Display values use four significant digits (IQR limits use three); hover preserves the full precision. HRs follow the chosen PRI-only/adjusted model; directional arrows are omitted. A † marks 95% intervals including 1; hover or focus an HR for its full interval and interpretation. These HRs are per training SD after preprocessing, conditional on the other model predictors, not local voxel risk. Clicking a feature selects its available vessel/map in the viewer. Map colors retain their existing numerical meaning.
 - **Cohort:** derivation patient/event counts, median age and percentage of women, plus patient-versus-median comparisons and empirical percentiles for PRI-only risk, age, Agatston and RF-CL. PRI uses the original out-of-fold derivation risks. Percentiles exclude missing values and use midrank for ties. Calcium-score availability is shown explicitly.
 
 The PRI bar has **25% / 50% / 25%** segments and the study's right-closed boundaries: Low ≤ Q25, Intermediate Q25 < risk ≤ Q75, High > Q75. Thresholds are read from the saved **out-of-fold derivation** configuration (currently 6.4473% and 10.5730% at 48 months), cross-checked against the PRI bundle. Hover a band/tick to see the threshold. The optional `priOofReference` JSON supplies the original out-of-fold PRI-only risk distribution. Its model, horizon, patient count and quartiles must match the derivation cohort and study thresholds before export. When available, the empirical percentile appears in a dedicated Percentile column between Adjusted and Risk category (e.g. 83.9 for P001), positions the white marker on the bar, and appears in the Cohort comparison table. The calculation is `100 * (number below + 0.5 * number tied) / reference count`, using the full-precision patient risk. External/validation cases never enter this distribution. Without this reference, the percentile is unavailable and the marker remains centered in the assigned category; no percentile is inferred from thresholds or in-sample refitted risks. The feature/age/calcium/RF-CL percentiles are actual empirical values. Feature percentiles are descriptive positions in the native-value derivation distribution, not risk percentiles or preprocessing-adjusted contributions. Cox HR interpretation follows the [lifelines survival-regression documentation](https://lifelines.readthedocs.io/en/latest/Survival%20Regression.html#interpretation).
 
-### AI data and model preparation
+### Fixed AI model/reference preparation
 
-`config/ai.local.json` points to the derivation and validation CSVs, two trusted local saved model bundles, and study threshold JSON, plus optional `priOofReference` pointing to a numerical OOF-reference JSON (currently `config/pri-oof-reference.local.json`). Override with `CORONARY_AI_CONFIG`. AI configuration is separate from imaging configuration, so it does not invalidate or rebuild CT/mesh caches. Patient IDs must be unique across the two datasets; the endpoint returns only the record matching the currently configured imaging case. An absent patient gets an explicit unavailable result, never a demonstration patient. Source paths, reference distributions, model files and all-patient data are not exposed over HTTP.
+The `ai` section in `viewer.local.json` contains the original model bundles,
+MEDIS reference-cohort subsets, study thresholds and OOF reference path. These
+are distinct from the **full** clinical eCRFs used to look up patients. The
+original reference cohort remains 1,038 derivation patients. Adding a patient or
+applying clinical overrides never changes that reference population.
 
-To recreate the numerical reference in the original analysis notebook, use the same frozen predictions that produced the saved strata thresholds, then point `priOofReference` at the resulting file and rerun export:
-
-```python
-import json
-from pathlib import Path
-import numpy as np
-
-scores = np.asarray(
-    cv_results_for_ROC["48months"]["whole"]["PRI"]["rad_only"][2].probas_val_avg,
-    dtype=float,
-).ravel()
-reference_path = Path("/absolute/path/to/coronary_viewer/config/pri-oof-reference.local.json")
-reference_path.write_text(json.dumps({
-    "model": "PRI-only",
-    "prediction_horizon_months": 48.0,
-    "threshold_source": "Derivation-cohort out-of-fold PRI-only 4-year risks",
-    "risks": scores.tolist(),
-}, allow_nan=False))
-```
-
-Prepare AI data once in an analysis environment. In this workspace `.venv-ai` uses the existing analysis environment with a project-local neuroCombat dependency; the export command is:
+`prepare.sh` automatically runs the one-time numerical export when its sources
+or settings change, using `.venv-ai/bin/python` (or `CORONARY_ANALYSIS_PYTHON`).
+This analysis environment needs `requirements-ai.txt`; the imaging/HTTP runtime
+uses `.venv` and `requirements.txt`. Trusted pickle bundles are read only during
+export. The running viewer uses the validated numerical export in `cache/ai/`.
+To rerun just that step:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 .venv-ai/bin/python -m backend.export_ai
-```
-
-To create an independent export environment instead, use Python 3.10+:
-
-```sh
-python3.10 -m venv .venv-ai
-.venv-ai/bin/python -m pip install -r requirements-ai.txt
 .venv-ai/bin/python -m backend.export_ai
 ```
 
-This command **does not fit models or execute the notebook**. It reads trusted local bundles using pandas' legacy pickle compatibility reader, extracts numerical parameters for site-only ComBat, saved scaling, the Cox coefficients/centering and baseline cumulative hazard, then validates predictions against neuroHarmonize and the saved lifelines models for every complete record and single-record site cases. Old serialized sklearn estimators are never invoked. For the supplied 1,410 records, both models match within 3.4 × 10⁻¹⁶ absolute risk. Only after validation does it atomically publish `cache/ai/reference.json`; no source data, notebooks, pickles or thresholds are modified. The main `.venv` needs no additional inference dependencies and never unpickles a model on an HTTP request.
+The exporter verifies site-only ComBat, saved scaling and Cox inference against
+the original lifelines/neuroHarmonize calculation. The OOF distribution's model,
+horizon, count and quartiles must match the study thresholds. Outcome-dependent
+imputation is not used; missing radiomic/kVp/RF-CL/SS45 inputs disable the relevant
+prediction. No model is retrained. AI setup and patient clinical edits are excluded
+from imaging fingerprints.
 
-Inference uses a fixed model schema. In particular, **continuous RF-CL stays numeric even for a single patient**, correcting the notebook helper's `nunique() <= 10` categorical inference for integer clinical fields. This agrees with the batch/reference model; patient 96's corrected adjusted risk is 11.4899%, rather than the notebook's saved 13.19% example. Patient 1718 is currently 12.4859% PRI-only, 10.9402% adjusted, High PRI stratum. These are model outputs, not historical patient outcomes.
-
-Historical `TIME` and `EVENT` values never enter inference or patient responses. The adjusted notebook's numeric imputer includes these outcome columns in its saved design, so this integration requires all eight radiomic inputs, known KVP and (for adjusted risk) recorded RF-CL/SS45. Missing predictors or unseen KVP explicitly disable the affected prediction rather than using outcome-dependent imputation. Supporting incomplete model inputs would require a reviewed, outcome-free preprocessing artifact; reporting fields may remain missing without blocking inference.
-
-Repeat export after changing CSVs, models, threshold files or AI configuration, then reload the page. Mounted source changes are detected by size/modification fingerprints and rejected until re-export. A validated cache remains usable when source storage is unmounted. The AI cache contains patient records and is covered by `cache/` in `.gitignore`; do not distribute it as a frontend asset.
-
-### External patient inputs
-
-P001 is registered in `config/cases/P001.json`, with the original CT at `/Volumes/X9Pro/datasets/new/P001/P001.nii.gz` and pipeline data under its `output/` directory. Reprepare with `.venv/bin/python -m backend.prepare --case P001`. Images, scalar CSVs, source maps and the upstream pipeline stay read-only.
-
-A case can specify `aiInput.radiomicsCsv` and optional `aiInput.clinicalJson`. Relative paths resolve from `coronary_viewer/`. The scalar CSV uses one row per `artery_label` (LAD, LCX, RCA). Signature features are joined by vessel and exact feature name; CSV row order is irrelevant. Duplicate vessel rows, conflicting patient IDs, malformed columns and non-finite numeric inputs are rejected. A missing feature remains unavailable rather than being filled with zero. Voxelwise maps are display inputs and do not substitute for the scalar signature values.
-
-`config/patients/P001.json` contains the user-supplied **120 kVp** and currently null clinical/reporting fields. Fill continuous `Clinical Likelihood` and `SS45` (`Yes`/`No`) to enable adjusted inference, and add the recorded class/demographics/clinical summary when available. Clinical JSON must identify the same `patientId`. After editing this JSON, reload the viewer or leave and reopen the patient to fetch the updated AI result. Toggling the AI panel alone retains its resident result. No imaging preparation or AI-model export is required. There is no imputation or default acquisition/clinical value. Required missing inputs leave the affected prediction unavailable while the feature/cohort views remain usable. The external scalar CSV must remain accessible for AI loading, even when prepared images are retained locally.
-
-External records use the saved numerical ComBat transforms, scaler, Cox model and risk-category thresholds. They never enter the derivation/validation patient export, cohort statistics or reference percentiles, and do not refit any model. `EVENT`/`TIME` and other unlisted metadata are ignored. The patient list uses the same external-record loader as the AI panel. External inputs cannot override an existing cohort patient ID. Source paths and full CSVs are not HTTP assets.
-
-P001's recorded extraction settings match the existing case-8 scalar export (1 mm isotropic resampling, bin width 10, no normalization, outlier setting 2.58, Original/Wavelet). Its cluster build reports PyRadiomics `0.post1.dev0+g6a761c4`, whereas the existing export reports `v3.0.1`; identical settings alone do not establish feature equivalence between builds. P001's PRI-only prediction was independently compared against the saved lifelines/neuroHarmonize calculation, with absolute risk error below 5 × 10⁻¹⁷. This checks inference arithmetic separately from radiomics extraction.
+P001 retains its recorded clinical JSON and source scalar CSV. Its prediction,
+reference percentiles and feature references were checked unchanged during this
+migration. The existing image caches were reused only after verifying identical
+source paths and their pre-migration fingerprints. No source image or mask was
+modified. Alternate legacy config environment variables remain available solely
+for existing scripts; normal operation uses `CORONARY_VIEWER_CONFIG` or
+`prepare.sh --config`.
 
 ### Component-based clinical likelihood
 
@@ -278,6 +302,8 @@ Screenshot output is under `test-results/`. The viewer has no Export button. `ca
 Display validation also checks native crop sizes, Gaussian speck suppression with lumen-hole preservation, mesh normals/displacement/volume stability, support-normalized interpolation with missing neighbours, balanced/raw palette semantics, aorta visibility, mesh/edge toggles and independent CPE-mask visibility.
 
 A patient-specific on/off audit at standard and Retina pixel densities confirms that the antialiasing toggle is active but often visually subtle. At device scale 2, case-1718 LAD changes about 0.54% of straightened pixels and RCA about 2.94%, with mean maximum-channel differences of 0.0066 and 0.0351 byte levels respectively (W 800 / L 250, straightened angle 6°, default viewport). These are display comparisons, not clinical noise-reduction measurements. Central-column pixels and the curved/orthogonal views are identical. The control is labelled Pixel antialiasing to distinguish it from background denoising or geometric correction.
+
+Right-click and drag in either CPR, the orthogonal cross-section or the axial view to adjust shared CCTA window/level: right widens the window, left narrows it, up raises the level and down lowers it. Current W/L appears while dragging. Left-drag navigation/rotation and wheel scrolling keep their existing behaviour. The gear menu also exposes numeric W/L controls.
 
 ## Switching between three demonstration patients
 
