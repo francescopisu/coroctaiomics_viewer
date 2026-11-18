@@ -91,7 +91,7 @@ export class CprScene {
         if(index===0){tf.addRGBPoint(c.level-c.width/2,0,0,0);tf.addRGBPoint(c.level+c.width/2,1,1,1);alpha.addPoint(0,1);actor.setVisibility(c.raw);actor.getProperty().setOpacity(1);
           mapper.setViewSpecificProperties({OpenGL:{PixelFootprintAntialiasing:view===0&&c.cprAntialias}});}
         else if(index===3){
-          FEATURE_PALETTE.forEach((rgb,i)=>tf.addRGBPoint(i/255,...rgb.map(x=>x/255)));tf.addRGBPoint(.5,1,1,1);alpha.addPoint(0,0);alpha.addPoint(1,1);
+          FEATURE_PALETTE.forEach((rgb,i)=>tf.addRGBPoint(i/255,...rgb.map(x=>x/255)));alpha.addPoint(0,0);alpha.addPoint(1,1);
           actor.getProperty().setInterpolationTypeToLinear();actor.setVisibility(!!this.feature);actor.getProperty().setOpacity(c.featureOpacity);
           if(this.feature)mapper.setViewSpecificProperties({OpenGL:{FeatureSamplingShader:this.feature.shader(c.featureScale,c.smoothEdges)}});
         }

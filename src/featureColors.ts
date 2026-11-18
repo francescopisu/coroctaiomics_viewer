@@ -1,10 +1,17 @@
-export const FEATURE_STOPS=['#3b9b38','#4daf4a','#ffffff','#f781bf','#e66aac'];
+// Matplotlib's standard Jet channel breakpoints, sampled into a shared LUT.
+const jetChannels:number[][][]=[
+  [[0,0],[.35,0],[.66,1],[.89,1],[1,.5]],
+  [[0,0],[.125,0],[.375,1],[.64,1],[.91,0],[1,0]],
+  [[0,.5],[.11,1],[.34,1],[.65,0],[1,0]],
+];
+export const FEATURE_PALETTE=Array.from({length:256},(_,i)=>jetChannels.map(channel=>{
+  const t=i/255,j=channel.findIndex(([x])=>x>=t);
+  if(j===0)return Math.round(channel[0][1]*255);
+  const [x0,y0]=channel[j-1],[x1,y1]=channel[j];
+  return Math.round((y0+(y1-y0)*(t-x0)/(x1-x0))*255);
+}));
+export const FEATURE_STOPS=FEATURE_PALETTE.map(rgb=>'#'+rgb.map(channel=>channel.toString(16).padStart(2,'0')).join(''));
 export const FEATURE_GRADIENT=`linear-gradient(to right,${FEATURE_STOPS.join(',')})`;
-const stops=FEATURE_STOPS.map(hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)));
-export const FEATURE_PALETTE=Array.from({length:256},(_,i)=>{
-  const x=i/255*4,j=Math.min(3,Math.floor(x)),t=x-j;
-  return stops[j].map((a,k)=>Math.round(a*(1-t)+stops[j+1][k]*t));
-});
 export type FeatureScale=[number,number,number];
 export function featureScale(info:{limit:number;balanced?:FeatureScale},mode:'raw'|'balanced'):FeatureScale{return mode==='balanced'&&info.balanced?info.balanced:[-info.limit,0,info.limit];}
 export function featurePosition(value:number,scale:FeatureScale):number{
@@ -13,7 +20,6 @@ export function featurePosition(value:number,scale:FeatureScale):number{
 }
 export function featureColor(value:number,scale:number|FeatureScale):number[]{
   const t=featurePosition(value,typeof scale==='number'?[-scale,0,scale]:scale);
-  if(t===.5)return [255,255,255];
   return FEATURE_PALETTE[Math.min(255,Math.floor(t*256))];
 }
 export function featurePixels(values:Float32Array,valid:Uint8Array,limit:number|FeatureScale,opacity:number){
