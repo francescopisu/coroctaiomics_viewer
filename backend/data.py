@@ -33,8 +33,11 @@ def validate_case_config(conf):
 
 def catalog_configurations():
     override = os.environ.get('CORONARY_CATALOG_CONFIG')
-    path = Path(override or ROOT/'config/catalog.local.json')
-    if not override and (os.environ.get('CORONARY_CASE_CONFIG') or not path.is_file()):
+    if not override and not os.environ.get('CORONARY_CASE_CONFIG'):
+        from .registry import cases as registry_cases
+        return registry_cases()
+    path = Path(override) if override else None
+    if path is None:
         conf = read_case_config()
         return {conf['patientId']:conf}
     entries = read_json(path)['cases']
@@ -52,16 +55,25 @@ def read_case_config(case_id=None):
         cases=catalog_configurations()
         if case_id not in cases:raise LookupError('Patient is not in the case catalogue')
         return cases[case_id]
-    path = Path(os.environ.get("CORONARY_CASE_CONFIG", ROOT / "config/case.local.json"))
-    return validate_case_config(read_json(path))
+    override = os.environ.get('CORONARY_CASE_CONFIG')
+    if override:return validate_case_config(read_json(Path(override)))
+    cases = catalog_configurations()
+    if not cases:raise ValueError('Add at least one patient to config/viewer.local.json.')
+    return next(iter(cases.values()))
+
+def imaging_config(conf):
+    """Clinical sources/overrides never invalidate CT or mesh preparation."""
+    return {key:value for key,value in conf.items() if key not in ('patientData','aiInput')}
 
 def configuration_key(conf=None):
     conf = read_case_config() if conf is None else conf
     defaults = Path(conf['pipelineRoot'])/'config/defaults.py'
-    return hashlib.sha256(json.dumps([conf,defaults.read_text()],sort_keys=True).encode()).hexdigest()
+    if conf.get('configurationError'):raise ValueError(conf['configurationError'])
+    return hashlib.sha256(json.dumps([imaging_config(conf),defaults.read_text()],sort_keys=True).encode()).hexdigest()
 
 def configuration(conf=None):
     conf = dict(read_case_config() if conf is None else conf)
+    if conf.get('configurationError'):raise ValueError(conf['configurationError'])
     defaults_path = Path(conf["pipelineRoot"]) / "config/defaults.py"
     # Parse literal assignments without importing torch, yacs, or pipeline side effects.
     values = {}
@@ -85,8 +97,6 @@ def configuration(conf=None):
     conf["cpeLengthMm"] = values["_C.PERILUMINAL_EXTRACTION.LENGTH"]
     conf["skipMm"] = values["_C.PERILUMINAL_EXTRACTION.SKIP_MM"]
     out, pid = Path(conf["outputRoot"]), conf["patientId"]
-    if out.name != pid and not (out.name == 'output' and out.parent.name == pid):
-        raise ValueError(f'outputRoot case {out.name} does not match patientId {pid}')
     ct_id = re.fullmatch(r'(\d+)\.nii(?:\.gz)?',Path(conf['ct']).name)
     if ct_id and ct_id[1] != pid:
         raise ValueError(f'CCTA case {ct_id[1]} does not match patientId {pid}')

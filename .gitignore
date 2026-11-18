@@ -5,6 +5,10 @@ node_modules/
 test-results/
 dist/
 cache/
+# Generated portable runtime, patient data and release packages.
+/.portable-build/
+/.portable-data/
+/releases/
 __pycache__/
 *.pyc
 *.log

@@ -1,0 +1,19 @@
+{
+  "patientId": "CHANGE_ME",
+  "KVP": null,
+  "Age at CCTA": null,
+  "Sex": null,
+  "Smoker": null,
+  "Hypertension": null,
+  "Diabetes": null,
+  "Dyslipidemia": null,
+  "Familiarity for CAD": null,
+  "Dyspnea": null,
+  "Type of chest pain ": null,
+  "Body mass index (BMI)": null,
+  "Clinical Likelihood": null,
+  "Clinical Likelihood Class": null,
+  "Coronary artery calcium score": null,
+  "CADRADS": null,
+  "SS45": null
+}

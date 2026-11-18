@@ -44,7 +44,7 @@ def manifest(case_id,case_config=None):
 @app.get('/api/patients')
 def get_patients():
     try: cases=catalog_configurations()
-    except (OSError,ValueError,KeyError):raise HTTPException(503,'Patient catalogue unavailable. Check config/catalog.local.json.')
+    except (OSError,ValueError,KeyError):raise HTTPException(503,'Patient registry unavailable. Check config/viewer.local.json.')
     from .ai import reference, infer, risk_stratum, patient_record
     try: ai=reference()
     except (OSError,ValueError,KeyError,TypeError):ai=None
@@ -76,7 +76,7 @@ def get_current_case():
 @app.get('/api/cases/{case_id}')
 def get_case(case_id: str):
     m = manifest(case_id)
-    return JSONResponse({**{k:v for k,v in m.items() if k not in ['assets','signature','configurationKey']},
+    return JSONResponse({**{k:v for k,v in m.items() if k not in ['assets','signature','configurationKey','sourceConfig']},
                          'interpretation':CASE_INTERPRETATION},headers={'Cache-Control':'no-store'})
 
 @app.get('/api/cases/{case_id}/assets/{name}')
@@ -100,7 +100,7 @@ def get_ai(case_id: str):
     except ValueError as error:
         raise HTTPException(503, str(error))
     except (OSError, KeyError, TypeError):
-        raise HTTPException(503, 'AI reference unavailable. Check config/ai.local.json and run python -m backend.export_ai.')
+        raise HTTPException(503, 'AI reference or patient inputs unavailable. Check config/viewer.local.json and prepare.sh.')
 
 @lru_cache(maxsize=1)
 def axial_arrays(case_id, revision):

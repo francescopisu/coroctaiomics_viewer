@@ -4,7 +4,7 @@ import json
 import os
 import numpy as np
 from skimage.measure import marching_cubes
-from .data import ROOT, configuration, configuration_key, image, centerline, resample_frames, sample, CASE_INTERPRETATION, read_case_config
+from .data import ROOT, configuration, configuration_key, imaging_config, image, centerline, resample_frames, sample, CASE_INTERPRETATION, read_case_config
 from .inspect_case import inspect
 from .volumes import prepare_volumes,prepare_axial_volume
 from .features import prepare_features
@@ -14,7 +14,7 @@ CACHE_VERSION = 9
 
 def signature(conf, paths):
     entries = {k: [str(p), p.stat().st_size, p.stat().st_mtime_ns] for k, p in paths.items()}
-    return hashlib.sha256(json.dumps([CACHE_VERSION, conf, entries], sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(json.dumps([CACHE_VERSION, imaging_config(conf), entries], sort_keys=True).encode()).hexdigest()
 
 def mesh(mask, affine, directory, name):
     nonzero = np.argwhere(mask)
@@ -105,7 +105,7 @@ def prepare(force=False,case_id=None):
         s['smoothPoints'],s['normals']=prefix+s['smoothPoints'],prefix+s['normals']
     if configuration_key(read_case_config(case_id))!=configured_key or signature(conf,paths)!=sig:
         raise RuntimeError('Case configuration or source files changed during preparation. Run preparation again.')
-    manifest = {"patientId": conf['patientId'], "signature": sig, "configurationKey":configured_key, "coordinateSystem": "LPS", "units": "mm",
+    manifest = {"patientId": conf['patientId'], "signature": sig, "configurationKey":configured_key, "sourceConfig":imaging_config(raw), "coordinateSystem": "LPS", "units": "mm",
         "sampling": conf['sampling'], "cpe": {"output": conf['directories']['cpe'], "nominalLengthMm": conf['cpeLengthMm'], "radialFactor": 4},
         "geometry": report['images']['ct'], "alignment": report['centerlines'], "surfaces": surfaces,
         "volumes":volumes, "axial":f'/api/cases/{conf["patientId"]}/axial',"axialVolume":axial_volume,"featureMaps":features,

@@ -1,0 +1,43 @@
+{
+  "pipelineRoot": "/Users/francescopisu/Workspace/Research/Projects/CoroCTAiomics/working_solution/coroctaiomics",
+  "clinicalSources": {
+    "derivation": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/output_no_MI_all_rad/analysis_checkpoints/20261103T104302Z_9f691260/df_der_no_hf.csv",
+    "validation": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/output_no_MI_all_rad/analysis_checkpoints/20261103T104302Z_9f691260/df_cpc_no_hf.csv"
+  },
+  "ai": {
+    "derivation": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/output_no_MI_all_rad/analysis_checkpoints/20261103T104302Z_9f691260/df_der_no_hf_MEDIS_subset.csv",
+    "validation": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/output_no_MI_all_rad/analysis_checkpoints/20261103T104302Z_9f691260/df_cpc_no_hf_MEDIS_subset.csv",
+    "priModel": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/external_validation/rebuttal/CoroCTAiomics_PRI_only_artifacts.pkl",
+    "adjustedModel": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/external_validation/rebuttal/CoroCTAiomics_artifacts.pkl",
+    "thresholds": "/Volumes/X9Pro/output/CoroCTAiomics/analysis/v2/28072025/data/external_validation/rebuttal/PRI_risk_strata_thresholds.json",
+    "priOofReference": "../resources/ai/pri-oof-reference.json"
+  },
+  "patients": [
+    {
+      "id": "96",
+      "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/1_500/96.nii.gz",
+      "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/96"
+    },
+    {
+      "id": "165",
+      "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/1_500/165.nii.gz",
+      "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/165"
+    },
+    {
+      "id": "814",
+      "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/501_1000/814.nii.gz",
+      "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/814"
+    },
+    {
+      "id": "893",
+      "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/501_1000/893.nii.gz",
+      "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/893"
+    },
+    {
+      "id": "P001",
+      "ct": "/Volumes/X9Pro/datasets/new/P001/P001.nii.gz",
+      "output": "/Volumes/X9Pro/datasets/new/P001/output",
+      "clinical": "patients/P001.json"
+    }
+  ]
+}

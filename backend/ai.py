@@ -13,16 +13,21 @@ OPTIONAL_SOURCE_KEYS = ('priOofReference',)
 
 
 def config_path():
-    return Path(os.environ.get('CORONARY_AI_CONFIG', ROOT/'config/ai.local.json'))
+    from .registry import registry_path
+    return Path(os.environ['CORONARY_AI_CONFIG']) if os.environ.get('CORONARY_AI_CONFIG') else registry_path()
 
 
 def read_config():
-    conf = json.loads(config_path().read_text())
+    path=config_path();conf=json.loads(path.read_text())
+    if not isinstance(conf,dict):raise ValueError('The viewer configuration must be a JSON object.')
+    if not os.environ.get('CORONARY_AI_CONFIG'):conf=conf.get('ai', {})
+    if not isinstance(conf,dict):raise ValueError('The ai section must be a JSON object with model/reference paths.')
     if any(not isinstance(conf.get(key), str) for key in SOURCE_KEYS):
-        raise ValueError('Set derivation, validation, priModel, adjustedModel and thresholds in config/ai.local.json.')
+        raise ValueError('Set the model/reference paths once in the ai section of config/viewer.local.json.')
     if any(key in conf and not isinstance(conf[key], str) for key in OPTIONAL_SOURCE_KEYS):
         raise ValueError('priOofReference must be a path to the exported out-of-fold PRI reference JSON.')
-    return conf
+    from .registry import resolve
+    return {key:resolve(value,path.parent) for key,value in conf.items() if key in (*SOURCE_KEYS,*OPTIONAL_SOURCE_KEYS)}
 
 
 def source_keys(conf):
@@ -138,6 +143,9 @@ def patient_record(patient_id, data, case_config=None):
             case_config = read_case_config(patient_id)
         except LookupError:
             case_config = None
+    if case_config and case_config.get('patientData'):
+        from .patient_records import load_patient
+        return load_patient(patient_id,case_config['patientData'],data['models']['pri']['features'],data['patients'].get(patient_id))
     if case_config and case_config.get('aiInput'):
         if patient_id in data['patients']:
             raise ValueError('External AI input conflicts with an existing cohort patient ID.')

@@ -71,7 +71,7 @@ class ExternalAiTests(unittest.TestCase):
         self.assertEqual(actual['stratum'],ai.risk_stratum(pri,data['thresholds']['q25'],data['thresholds']['q75']))
         conf=read_case_config('P001')
         self.clinical.write_text(json.dumps({**self.metadata,'patientId':'P001'}))
-        conf={**conf,'aiInput':{**conf['aiInput'],'clinicalJson':str(self.clinical)}}
+        conf={**conf,'patientData':{**conf['patientData'],'clinicalJson':str(self.clinical)}}
         with patch.object(ai,'read_case_config',return_value=conf):
             complete=ai.results('P001')
         self.assertIsNone(complete['predictions']['adjusted']['error'])
