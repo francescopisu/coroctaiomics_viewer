@@ -111,7 +111,7 @@ export class Scene {
     if(this.disposed||!this.loaded||!this.active)return;
     if(c.render3d==='cpe'&&!this.volumeRenderer)void this.prepareVolume();
     this.volumeRenderer?.update(c);
-    const volumeMode=c.render3d==='cpe'&&!!this.volumeRenderer,context=volumeMode?c.volumeContext:1;
+    const volumeMode=c.render3d==='cpe'&&!!this.volumeRenderer,context=c.volumeContext;
     this.container.dataset.renderMode=volumeMode?'cpe':'anatomy';
     this.container.dataset.volumeLighting=c.volumeLighting;this.container.dataset.volumePreset=c.volumePreset;
     this.container.dataset.volumeMaskBits=String((c.cpe.LAD?2:0)|(c.cpe.LCx?4:0)|(c.cpe.RCA?8:0));
@@ -121,10 +121,12 @@ export class Scene {
       poly.getPointData().setNormals(c.smoothMeshes?normals:null);poly.modified();
     }this.smoothed=c.smoothMeshes;}
     for(const [key,actor] of Object.entries(this.actors)){
-      if(key==='ascending_aorta'){actor.setVisibility(c.aorta);actor.getProperty().setColor(.77,.81,.84);actor.getProperty().setOpacity(c.aortaOpacity*context);}
-      else if(key.startsWith('lumen_')){actor.setVisibility(c.lumen && key===`lumen_${c.side}`); actor.getProperty().setColor(0.94,0.95,0.96); actor.getProperty().setOpacity(c.lumenOpacity*context);}
+      if(key==='ascending_aorta'){actor.setVisibility(c.aorta);actor.getProperty().setColor(.77,.81,.84);actor.getProperty().setOpacity(context);}
+      else if(key.startsWith('lumen_')){actor.setVisibility(c.lumen && key===`lumen_${c.side}`); actor.getProperty().setColor(0.94,0.95,0.96); actor.getProperty().setOpacity(context);}
       else {const v=key.replace(/^(cpe_|line_)/,'') as Vessel; actor.setVisibility(key.startsWith('cpe_') ? !volumeMode&&c.cpeVisible&&c.cpe[v]:c.centerline); actor.getProperty().setColor(...color(c.colors[v])); actor.getProperty().setOpacity(key.startsWith('cpe_')?c.cpeOpacity:context); if(key.startsWith('line_'))actor.getProperty().setLineWidth(v===c.vessel?5:2);}
     }
+    this.container.dataset.aortaOpacity=String(this.actors.ascending_aorta?.getProperty().getOpacity()??'');
+    this.container.dataset.lumenOpacity=String(this.actors[`lumen_${c.side}`]?.getProperty().getOpacity()??'');
     const f=this.data.vessels[c.vessel],p=f.points[c.index],u=f.u[c.index],v=f.v[c.index];
     this.marker.setPosition(...p);this.marker.setVisibility(true);
     const ringPoints=Array.from({length:65},(_,i)=>plus(p,u,v,Math.cos(i/64*Math.PI*2)*Math.max(4,f.radii[c.index]*4),Math.sin(i/64*Math.PI*2)*Math.max(4,f.radii[c.index]*4)));
