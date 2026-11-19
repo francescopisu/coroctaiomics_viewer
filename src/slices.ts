@@ -1,9 +1,10 @@
 import {rgba,type Case,type Controls,type Vec3} from './types';
 import {type Volume} from './volume';
 import {type FeatureVolume} from './featureVolume';
-import {featureColor,featureScale,type FeatureScale} from './featureColors';
+import {featureColor,featureScale,type FeatureScale,type FeatureMode} from './featureColors';
 import {edgeCoverage} from './featureSampling';
-export interface FeaturePlane {values:Float32Array;valid:Uint8Array;limit:number;balanced?:FeatureScale;coverage?:Float32Array;displayMask?:Uint8Array}
+import type {CohortReference} from './cohortReference';
+export interface FeaturePlane {cohortReference?:CohortReference;values:Float32Array;valid:Uint8Array;limit:number;balanced?:FeatureScale;coverage?:Float32Array;displayMask?:Uint8Array}
 export interface Plane {ct:Float32Array|Int16Array;lumen:Uint8Array;cpe:Uint8Array;width:number;height:number;spacingMm?:number;lumenField?:Float32Array;cpeField?:Float32Array;feature?:FeaturePlane}
 export function crossSection(data:Case,c:Pick<Controls,'vessel'|'index'|'smoothEdges'>,volume:Volume):Plane {
   const f=data.vessels[c.vessel],p=f.points[c.index],u=f.u[c.index],v=f.v[c.index];
@@ -25,9 +26,9 @@ export function crossFeature(data:Case,c:Pick<Controls,'vessel'|'index'|'smoothE
     const q=p.map((a,i)=>a+(x-(n-1)/2)*res*u[i]+(y-(n-1)/2)*res*v[i]) as Vec3,value=feature.sample(q,c.smoothEdges),index=y*n+x;
     if(value!==null){values[index]=value.value;coverage[index]=value.coverage;valid[index]=1;}
   }
-  return {values,valid,coverage,limit:feature.info.limit,balanced:feature.info.balanced};
+  return {values,valid,coverage,limit:feature.info.limit,balanced:feature.info.balanced,cohortReference:feature.info.cohortReference};
 }
-export function compositeFeature(pixels:Uint8ClampedArray,feature:FeaturePlane,opacity:number,mode:'raw'|'balanced'='raw'){
+export function compositeFeature(pixels:Uint8ClampedArray,feature:FeaturePlane,opacity:number,mode:FeatureMode='raw'){
   const scale=featureScale(feature,mode);
   for(let i=0;i<feature.values.length;i++)if(feature.valid[i]){const rgb=featureColor(feature.values[i],scale),a=opacity*(feature.coverage?.[i]??1);for(let j=0;j<3;j++)pixels[i*4+j]=pixels[i*4+j]*(1-a)+rgb[j]*a;}
   return pixels;

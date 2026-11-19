@@ -12,3 +12,6 @@ cache/
 __pycache__/
 *.pyc
 *.log
+
+# Local cohort display reference exported from the cluster.
+/config/radiomic-cohort-reference.local.json

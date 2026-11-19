@@ -1,10 +1,11 @@
 import {binary,type FeatureInfo,type Vec3} from './types';
 import {imageFromValues} from './volume';
-import {featureScale} from './featureColors';
+import {featureScale,type FeatureMode} from './featureColors';
+import {cohortShader} from './cohortReference';
 import {sampleFeature} from './featureSampling';
 
 export class FeatureVolume {
-  image;outlineImage;displayImage;
+  image;outlineImage;displayImage;private shaders=new Map<string,string>();
   constructor(public info:FeatureInfo,public values:Float32Array,public valid:Uint8Array,public cpe:Uint8Array,public display:Uint8Array){
     const [nx,ny,nz]=info.dimensions,boundary=new Uint8Array(cpe.length),slice=nx*ny,packed=new Float32Array(cpe.length*4),span=info.maximum-info.minimum;
     for(let i=0;i<cpe.length;i++){
@@ -15,15 +16,17 @@ export class FeatureVolume {
     this.image=imageFromValues(info,packed,4,'Feature scalar, support and display boundary');
     this.outlineImage=imageFromValues(info,boundary,1,'CPE voxel boundary');this.displayImage=imageFromValues(info,display,1,'CPE display boundary');
   }
-  shader(mode:'raw'|'balanced',smooth:boolean){
-    const [lo,mid,hi]=featureScale(this.info,mode),f=(x:number)=>x.toExponential(12),dims=this.info.dimensions.map(f).join(',');
-    return `
+  shader(mode:FeatureMode,smooth:boolean){
+    const key=mode+smooth,cached=this.shaders.get(key);if(cached)return cached;
+    const scale=featureScale(this.info,mode),[lo,mid,hi]=Array.isArray(scale)?scale:[0,0,0],f=(x:number)=>x.toExponential(12),dims=this.info.dimensions.map(f).join(',');
+    const shader=`
       float support = tvalue.g;
       float value = ${f(this.info.minimum)} + (tvalue.r / max(support, 1.0e-6)) * ${f(this.info.maximum-this.info.minimum)};
-      float intensity = ${lo===hi?'0.5':`value < ${f(mid)} ? 0.5 * (value - (${f(lo)})) / ${f(Math.max(mid-lo,1e-30))} : 0.5 + 0.5 * (value - (${f(mid)})) / ${f(Math.max(hi-mid,1e-30))}`};
+      ${!Array.isArray(scale)?cohortShader(scale):`float intensity = ${lo===hi?'0.5':`value < ${f(mid)} ? 0.5 * (value - (${f(lo)})) / ${f(Math.max(mid-lo,1e-30))} : 0.5 + 0.5 * (value - (${f(mid)})) / ${f(Math.max(hi-mid,1e-30))}`};`}
       float coverage = ${smooth?'smoothstep(0.45, 0.55, tvalue.b)':`texture(volumeTexture, (floor(volumePosTC * vec3(${dims})) + vec3(0.5)) / vec3(${dims})).a`};
       gl_FragData[0] = vec4(texture2D(colorTexture1, vec2(clamp(intensity, 0.0, 1.0), 0.5)).rgb, support > 1.0e-6 ? coverage * opacity : 0.0);
     `;
+    this.shaders.set(key,shader);return shader;
   }
   sample(p:Vec3,smooth=true){const ijk:Vec3=[0,0,0];this.image.worldToIndex(p,ijk);return sampleFeature(this.values,this.valid,this.display,this.cpe,this.info.dimensions,ijk,smooth);}
   axialField(index:number,shape:Vec3,smooth:boolean){
@@ -37,7 +40,7 @@ export class FeatureVolume {
       const source=nx*(j+ny*k),target=x+width*(y+j);
       values.set(this.values.subarray(source,source+nx),target);valid.set(this.valid.subarray(source,source+nx),target);
     }
-    return {values,valid,limit:this.info.limit,balanced:this.info.balanced,displayMask:this.axialField(index,shape,smooth)};
+    return {values,valid,limit:this.info.limit,balanced:this.info.balanced,cohortReference:this.info.cohortReference,displayMask:this.axialField(index,shape,smooth)};
   }
   dispose(){for(const image of [this.image,this.outlineImage,this.displayImage]){image.getPointData().getScalars().delete();image.delete();}}
 }

@@ -19,7 +19,7 @@ import {restoreView,saveView} from './viewState';
 import {attenuationBands,attenuationRange,calibratedHu} from './cpeVolumeData';
 import {useWindowLevel,type WindowLevel} from './useWindowLevel';
 
-const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.5,volumeReferenceFade:.8,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,lumen:true,centerline:false,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
+const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.5,volumeReferenceFade:.8,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'cohort',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,lumen:true,centerline:false,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
 export default function App({patientId,toolbarHost,active=true,onReady}:{patientId:string;toolbarHost:HTMLElement|null;active?:boolean;onReady?:(id:string)=>void}){
   const [data,setData]=useState<Case>(),[c,setC]=useState(()=>restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
   const latestControls=useRef(c);latestControls.current=c;
@@ -47,6 +47,8 @@ export default function App({patientId,toolbarHost,active=true,onReady}:{patient
   const featureInfo=availableFeatures.find(f=>f.id===featureId);
   const feature=featureCache&&featureCache.data===data&&featureInfo?featureCache.cache.get(featureId):undefined;
   const scale=featureInfo?featureScale(featureInfo,c.featureScale):undefined;
+  const cohort=scale&&!Array.isArray(scale)?scale:undefined;
+  const scaleMode=c.featureScale==='cohort'&&!cohort?'balanced':c.featureScale;
   const basePlane=useMemo(()=>data&&volume?crossSection(data,c,volume):undefined,[data,volume,c.vessel,c.index,c.smoothEdges]);
   const plane=useMemo(()=>data&&basePlane&&feature?{...basePlane,feature:crossFeature(data,c,basePlane,feature)}:basePlane,[data,basePlane,feature,c.vessel,c.index,c.smoothEdges]);
   const tissueReference=data?.tissueReference?.available?data.tissueReference:undefined;
@@ -137,8 +139,9 @@ export default function App({patientId,toolbarHost,active=true,onReady}:{patient
       {mapsVisible&&availableFeatures.length>0&&<select className="feature-select" aria-label="Radiomic feature map" value={featureId} onChange={e=>update('featureIds',{...c.featureIds,[c.vessel]:e.target.value})}>
         {availableFeatures.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
       </select>}
-      {featureInfo&&<select className="scale-select" aria-label="Feature scale" value={c.featureScale} title="Balanced: 2nd percentile / median / 98th percentile. Raw zero: original sign and symmetric extrema." onChange={e=>update('featureScale',e.target.value as Controls['featureScale'])}><option value="balanced">Balanced</option><option value="raw">Raw zero</option></select>}
-      {featureInfo&&scale&&<div className="feature-scale" aria-label="Feature color scale" title={`${featureInfo.name}: ${c.featureScale==='balanced'?'2nd percentile / median / 98th percentile':'raw, zero-centered'}`}><i style={{background:FEATURE_GRADIENT}}/><div>{scale.map((value,i)=><span key={i}>{featureNumber(value)}</span>)}</div></div>}
+      {featureInfo&&<select className="scale-select" aria-label="Feature scale" value={scaleMode} title="Derivation reference: shared cohort percentiles. Balanced and Raw zero: patient-specific scales." onChange={e=>update('featureScale',e.target.value as Controls['featureScale'])}><option value="cohort" disabled={!featureInfo.cohortReference}>Derivation reference</option><option value="balanced">Balanced</option><option value="raw">Raw zero</option></select>}
+      {featureInfo&&scale&&<div className="feature-scale" aria-label="Feature color scale" title={`${featureInfo.name}: ${cohort?`local feature percentile in ${cohort.nPatients} derivation patients; equal patient weights; reference ${cohort.id}`:scaleMode==='balanced'?'patient 2nd percentile / median / 98th percentile':'patient raw, zero-centered'}`}><i style={{background:FEATURE_GRADIENT}}/><div>{(cohort?['P0','P50','P100']:(scale as [number,number,number]).map(featureNumber)).map((label,i)=><span key={i}>{label}</span>)}</div></div>}
+      {cohort&&<span className="cohort-reference-count" title="Provisional voxel-wise derivation reference; colors represent feature percentiles.">{cohort.nPatients} reference patients</span>}
       {featureInfo&&!feature&&<span className="map-loading">Loading map…</span>}
     </div>
     {error&&<div className="error" role="alert">{error}<button onClick={()=>location.reload()}>Reload</button></div>}
