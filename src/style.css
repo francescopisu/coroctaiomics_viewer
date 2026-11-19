@@ -65,3 +65,5 @@ body{padding-top:var(--workspace-top)}
 main{height:calc(100dvh - var(--workspace-top))}.patient-browser{min-height:calc(100dvh - var(--workspace-top))}.resident-viewer,.initial-loader{top:var(--workspace-top)}
 
 .recon.is-windowing,.recon.is-windowing .cpr-hit,.slice-image.is-windowing{cursor:crosshair}.window-level-readout{position:absolute;top:34px;left:10px;z-index:4;pointer-events:none;padding:4px 7px;border:1px solid #355064;border-radius:3px;background:#06131ee8;color:#d7e4eb;font-size:13px;font-variant-numeric:tabular-nums}.slice-image>.window-level-readout{top:48px}
+
+.tissue-reference-info{font-size:12px;color:#9fb3c0;line-height:1.5;border-bottom:1px solid #29404e;padding-bottom:10px}

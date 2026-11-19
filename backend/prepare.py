@@ -52,6 +52,8 @@ def prepare(force=False,case_id=None):
                 print('Adding resident native axial volume to the current cache...',flush=True)
                 old['axialVolume']=prepare_axial_volume(directory,old['volumes']['LAD']['scalarType'],old['assets'],f'/api/cases/{conf["patientId"]}/assets/')
                 temp=directory/'manifest.tmp';temp.write_text(json.dumps(old));os.replace(temp,manifest_path)
+            from .tissue_reference import prepare_tissue_reference
+            prepare_tissue_reference(conf['patientId'])
             print('Verified source fingerprint; cache is current.'); return
     report = inspect(raw)
     print('Source geometry and centerline alignment passed.', flush=True)
@@ -114,6 +116,8 @@ def prepare(force=False,case_id=None):
         "assets": assets,
         "interpretation": CASE_INTERPRETATION}
     temp = directory/'manifest.tmp'; temp.write_text(json.dumps(manifest)); os.replace(temp, manifest_path)
+    from .tissue_reference import prepare_tissue_reference
+    prepare_tissue_reference(conf['patientId'])
     print(f'Ready: {directory}; {sum((directory / a).stat().st_size for a in assets)/1e6:.1f} MB of viewer assets.', flush=True)
 
 if __name__ == '__main__':

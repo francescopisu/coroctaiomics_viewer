@@ -86,6 +86,7 @@ export class Scene {
     if(!this.nativeStack||this.volumePending||this.volumeFailed||this.volumeRenderer)return;
     this.volumePending=true;this.volumeStatus({phase:'preparing'});
     try{
+      if(!this.data.tissueReference?.available||!this.data.bloodPoolReference?.available)throw new Error(`Multi-reference CPE rendering unavailable: ${this.data.tissueReference?.reason??this.data.bloodPoolReference?.reason??'prepare the patient tissue references first.'}`);
       const start=performance.now(),packed=await packCpeVolume(this.nativeStack,this.data.geometry,this.volumeAbort.signal);
       this.container.dataset.volumePackMs=(performance.now()-start).toFixed(1);
       if(this.disposed)return;

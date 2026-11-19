@@ -16,10 +16,10 @@ import {ResourceCache} from './resourceCache';
 import {AiPanel} from './AiPanel';
 import type {AiFeature} from './aiTypes';
 import {restoreView,saveView} from './viewState';
-import {attenuationBands} from './cpeVolumeData';
+import {attenuationBands,attenuationRange,calibratedHu} from './cpeVolumeData';
 import {useWindowLevel,type WindowLevel} from './useWindowLevel';
 
-const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:1,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,lumen:true,centerline:false,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
+const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.5,volumeReferenceFade:.8,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'balanced',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,lumen:true,centerline:false,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
 export default function App({patientId,toolbarHost,active=true,onReady}:{patientId:string;toolbarHost:HTMLElement|null;active?:boolean;onReady?:(id:string)=>void}){
   const [data,setData]=useState<Case>(),[c,setC]=useState(()=>restoreView(patientId,initial)),[error,setError]=useState(''),[ready,setReady]=useState(false);
   const latestControls=useRef(c);latestControls.current=c;
@@ -49,6 +49,7 @@ export default function App({patientId,toolbarHost,active=true,onReady}:{patient
   const scale=featureInfo?featureScale(featureInfo,c.featureScale):undefined;
   const basePlane=useMemo(()=>data&&volume?crossSection(data,c,volume):undefined,[data,volume,c.vessel,c.index,c.smoothEdges]);
   const plane=useMemo(()=>data&&basePlane&&feature?{...basePlane,feature:crossFeature(data,c,basePlane,feature)}:basePlane,[data,basePlane,feature,c.vessel,c.index,c.smoothEdges]);
+  const tissueReference=data?.tissueReference?.available?data.tissueReference:undefined;
   const slice=data?axialIndex(data,c):0;
   const baseAxial=useMemo(()=>nativeAxial?.slice(slice,c.vessel),[nativeAxial,slice,c.vessel]);
   const axialPlane=useMemo(()=>baseAxial&&feature&&data?{...baseAxial,feature:feature.axialPlane(slice,data.geometry.shape,c.smoothEdges)}:baseAxial,[baseAxial,feature,data,slice,c.smoothEdges]);
@@ -146,15 +147,21 @@ export default function App({patientId,toolbarHost,active=true,onReady}:{patient
         <div className="overview-scene-layer" inert={aiOpen} aria-hidden={aiOpen}><h2>3D</h2>
         {c.render3d==='cpe'&&<div className="render3d-controls">
           <details className="volume-settings"><summary aria-label="CPE volume settings">Settings</summary><div className="volume-menu">
+            <output className="tissue-reference-info" aria-label="Tissue rendering reference">Multi-reference</output>
+            {tissueReference&&<>
+              <output className="tissue-reference-info" aria-label="High HU threshold" title="Experimental display boundary: max(350 HU, aortic blood P99).">{Math.round(calibratedHu(350,tissueReference))} HU · aortic P99</output>
+              <output className="tissue-reference-info" aria-label="Tissue reference medians" title="Native HU medians: CPE fat-range voxels and eroded myocardium. Experimental display references, not plaque labels.">Fat {Math.round(tissueReference.fat!.p50HU)} · Muscle {Math.round(tissueReference.myocardium!.p50HU)} HU</output>
+              <label title="Fade opacity where attenuation resembles the sampled blood or myocardium. Overlapping plaque intensities can also fade; set to zero to inspect without this fade.">Blood/muscle fade<input aria-label="Blood and muscle fade" type="range" min="0" max="1" step=".05" value={c.volumeReferenceFade} onChange={e=>update('volumeReferenceFade',+e.target.value)}/></label>
+            </>}
             <label>Density<input aria-label="CPE volume density" type="range" min="0" max="2" step=".05" value={c.volumeDensity} onChange={e=>update('volumeDensity',+e.target.value)}/></label>
-            {attenuationBands.map(band=><label key={band.id} title={band.range}>{band.label}<input aria-label={`${band.label} opacity`} type="range" min="0" max="2" step=".05" value={c.volumeBands[band.id]} onChange={e=>update('volumeBands',{...c.volumeBands,[band.id]:+e.target.value})}/></label>)}
+            {attenuationBands.map(band=><label key={band.id} title={tissueReference?attenuationRange(band.id,tissueReference):undefined}>{band.label}<input aria-label={`${band.label} opacity`} type="range" min="0" max="2" step=".05" value={c.volumeBands[band.id]} onChange={e=>update('volumeBands',{...c.volumeBands,[band.id]:+e.target.value})}/></label>)}
             <label>Context<input aria-label="CPE anatomical context opacity" type="range" min="0" max="1" step=".01" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
           </div></details>
         </div>}
         <div className="scene" ref={sceneHost}/>{!ready&&<span className="loading">Loading…</span>}
         {c.render3d==='cpe'&&volumeStatus.phase==='preparing'&&<span className="volume-status" role="status">Preparing CPE volume…</span>}
         {c.render3d==='cpe'&&volumeStatus.phase==='error'&&<div className="volume-status" role="alert">{volumeStatus.message}<button onClick={()=>scene.current?.retryVolume()}>Retry</button></div>}
-        {c.render3d==='cpe'&&volumeStatus.phase==='ready'&&<div className="volume-legend" aria-label="CPE CT attenuation bands" title="Display bands in native HU, not validated plaque or histological classifications. Colors apply only to saved CPE voxels; they are independent of the radiomic-map palette.">{attenuationBands.map(band=><span key={band.id} title={band.range}><i style={{background:band.color}}/>{band.label}</span>)}</div>}
+        {c.render3d==='cpe'&&volumeStatus.phase==='ready'&&<div className="volume-legend" aria-label="CPE CT attenuation bands" title="Display bands in native HU, not validated plaque or histological classifications. Colors apply only to saved CPE voxels; they are independent of the radiomic-map palette.">{attenuationBands.map(band=><span key={band.id} title={tissueReference?attenuationRange(band.id,tissueReference):undefined}><i style={{background:band.color}}/>{band.label}</span>)}</div>}
         </div>
       {data&&<AiPanel key={data.patientId} patientId={data.patientId} open={active&&aiOpen} onClose={closeAi} selectedFeature={featureInfo?.name} onSelectFeature={selectAiFeature} maps={data.featureMaps}/>}
       </section>

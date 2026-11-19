@@ -34,8 +34,8 @@ test('AI results use the configured patient, switch details and preserve reconst
   const geometry=async()=>Promise.all(['.overview','.recon','.right-views'].map(selector=>page.locator(selector).boundingBox()));
   const before=await geometry(),curved=page.getByLabel('CPR rotation');
   const indexBefore=await page.locator('.cross canvas').getAttribute('data-centreline-index');
-  await page.getByRole('button',{name:'AI',exact:true}).click();
-  const panel=page.getByRole('dialog',{name:'AI',exact:true});
+  await page.getByRole('button',{name:'Show AI report',exact:true}).click();
+  const panel=page.getByRole('dialog',{name:'AI report',exact:true});
   await expect(panel.getByLabel('PRI-only risk')).toHaveText(`${(100*data.predictions.pri.risk!).toFixed(1)}%`);
   await expect(panel.getByLabel('Adjusted risk')).toHaveText(`${(100*data.predictions.adjusted.risk!).toFixed(1)}%`);
   await expect(panel.getByLabel('Risk category')).toHaveText(data.stratum!);
@@ -43,7 +43,7 @@ test('AI results use the configured patient, switch details and preserve reconst
   await expect(panel.locator('.ai-risk-track>i')).toHaveAttribute('title',/PRI percentile/);
   expect(await panel.locator('.ai-risk-track>i').evaluate(el=>parseFloat((el as HTMLElement).style.left))).toBeCloseTo(data.priReference.percentile!,3);
   await expect(panel.getByText('Risk category',{exact:true})).toBeVisible();
-  await expect(panel).toContainText('Patient 1718');await expect(panel).toContainText('ESC RF-CL 12% · Low');
+  await expect(panel).toContainText('Patient 1718');await expect(panel.locator('div').filter({has:page.locator('dt').getByText('ESC RF-CL',{exact:true})}).last()).toContainText('12% · Low');
   await expect(panel.locator('dd').filter({hasText:'Unknown'})).toHaveCount(1);
   expect(await geometry()).toEqual(before);expect(await curved.innerText()).toBe('0°');
   expect(await page.locator('.cross canvas').getAttribute('data-centreline-index')).toBe(indexBefore);
@@ -94,19 +94,19 @@ test('AI results use the configured patient, switch details and preserve reconst
   await panel.getByRole('tab',{name:'Cohort',exact:true}).press('ArrowRight');
   await expect(panel.getByRole('tab',{name:'Patient',exact:true})).toHaveAttribute('aria-selected','true');
   await panel.press('Escape');await expect(panel).not.toBeVisible();
-  await expect(page.getByRole('button',{name:'AI',exact:true})).toBeFocused();
-  await page.getByRole('button',{name:'AI',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Show AI report',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Show AI report',exact:true}).click();
   await expect(panel.getByLabel('PRI-only risk')).toBeVisible();expect(aiRequests).toHaveLength(1);
   await expect(page.locator('.initial-loader')).toHaveCount(0);expect(errors).toEqual([]);
   await panel.getByRole('button',{name:'Close AI results',exact:true}).click();
-  await expect(page.getByRole('button',{name:'AI',exact:true})).toHaveAttribute('aria-expanded','false');
+  await expect(page.getByRole('button',{name:'Show AI report',exact:true})).toHaveAttribute('aria-expanded','false');
 });
 
 test('patient 8 GLDM value has a cohort reference and remains readable in a compact panel',async({page})=>{
   test.setTimeout(150000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
   await page.setViewportSize({width:1050,height:800});await page.goto('/viewer/8');
   await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:90000});
-  await page.getByRole('button',{name:'AI',exact:true}).click();const panel=page.getByRole('dialog',{name:'AI',exact:true});
+  await page.getByRole('button',{name:'Show AI report',exact:true}).click();const panel=page.getByRole('dialog',{name:'AI report',exact:true});
   await expect(panel.getByLabel('PRI-only risk')).toBeVisible();await panel.getByRole('tab',{name:'Features',exact:true}).click();
   const gldm=panel.getByRole('row').filter({has:page.getByRole('button',{name:'Show LAD wavelet-LHL_gldm_LargeDependenceLowGrayLevelEmphasis map',exact:true})});
   await expect(gldm.locator('.ai-feature-patient>span')).toHaveText('0.0087');await expect(gldm.locator('.ai-feature-patient>small')).toHaveText('P70.6');
@@ -126,8 +126,8 @@ test('AI failure stays in the panel and offers retry without interrupting the vi
   test.setTimeout(150000);
   await page.route('**/api/cases/*/ai',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'AI source files changed. Run python -m backend.export_ai again.'})}));
   await page.goto('/viewer/1718');await expect(page.locator('main')).toHaveAttribute('aria-busy','false',{timeout:90000});
-  await page.getByRole('button',{name:'AI',exact:true}).click();
-  const panel=page.getByRole('dialog',{name:'AI',exact:true});
+  await page.getByRole('button',{name:'Show AI report',exact:true}).click();
+  const panel=page.getByRole('dialog',{name:'AI report',exact:true});
   await expect(panel.getByRole('alert')).toContainText('AI source files changed');
   await expect(panel.getByRole('button',{name:'Retry',exact:true})).toBeVisible();
   await expect(page.locator('main')).toHaveAttribute('aria-busy','false');

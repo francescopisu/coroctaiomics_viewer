@@ -51,7 +51,7 @@ export function AiPanel({patientId,open,onClose,onSelectFeature,selectedFeature,
   const marker=priPercentile??(result?.stratum==='Low'?12.5:result?.stratum==='Intermediate'?50:87.5);
   const chooseTab=(index:number)=>{setTab(tabs[index]);requestAnimationFrame(()=>panel.current?.querySelectorAll<HTMLButtonElement>('[role=tab]')[index]?.focus());};
   return <aside id="ai-results" className={`ai-panel${tab==='Features'?' ai-panel-features':''}`} ref={panel} role="dialog" aria-modal="false" aria-labelledby="ai-title" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();onClose();}}}>
-    <div className="ai-heading"><h2 id="ai-title">AI</h2><span title={result?`Patient record: ${result.sourceCohort} dataset. Model revision ${result.modelRevision}`:undefined}>Patient {patientId}</span><button ref={close} aria-label="Close AI results" onClick={onClose}>×</button></div>
+    <div className="ai-heading"><h2 id="ai-title">AI report</h2><span title={result?`Patient record: ${result.sourceCohort} dataset. Model revision ${result.modelRevision}`:undefined}>Patient {patientId}</span><button ref={close} aria-label="Close AI results" onClick={onClose}>×</button></div>
     {!result?<div className="ai-status" role={error?'alert':'status'}>{error||'Loading AI results…'}{error&&<button onClick={()=>setRetry(n=>n+1)}>Retry</button>}</div>:<>
       <div className="ai-horizon">{number(result.horizonMonths/12)}-year MACE</div>
       <div className="ai-metrics">
@@ -74,14 +74,18 @@ export function AiPanel({patientId,open,onClose,onSelectFeature,selectedFeature,
         if(next!==undefined){e.preventDefault();chooseTab(next);}
       }}>{name}</button>)}</div>
       <div className={`ai-content ai-content-${tab.toLowerCase()}`} role="tabpanel" id={`ai-view-${tab}`} aria-labelledby={`ai-tab-${tab}`} tabIndex={0}>
-        {tab==='Patient'&&patient&&<>
-          <div className="ai-patient-line"><span>{number(typeof patient['Age at CCTA']==='number'?patient['Age at CCTA']:null,0)} y · {display(patient.Sex)}</span><span title="Stored ESC RF-CL value and class; not recalculated in the viewer.">ESC RF-CL {number(typeof patient['Clinical Likelihood']==='number'?patient['Clinical Likelihood']:null)}{patient['Clinical Likelihood']!=null?'%':''} · {display(patient['Clinical Likelihood Class'])}</span></div>
-          <dl className="ai-patient-fields">{[
-            ['CAD-RADS','CADRADS'],['Agatston','Coronary artery calcium score'],
+        {tab==='Patient'&&patient&&<dl className="ai-patient-fields">
+          <div><dt>Age</dt><dd>{typeof patient['Age at CCTA']==='number'?`${number(patient['Age at CCTA'],0)} years`:'Not recorded'}</dd></div>
+          <div><dt>Sex</dt><dd>{display(patient.Sex)}</dd></div>
+          <div title="Stored ESC RF-CL value and class; not recalculated in the viewer."><dt>ESC RF-CL</dt><dd>{typeof patient['Clinical Likelihood']==='number'?`${number(patient['Clinical Likelihood'])}%`:'Not recorded'}{patient['Clinical Likelihood Class']!=null&&` · ${display(patient['Clinical Likelihood Class'])}`}</dd></div>
+          <div><dt>CAD-RADS</dt><dd>{display(patient.CADRADS)}</dd></div>
+          <div><dt>Agatston</dt><dd>{typeof patient['Coronary artery calcium score']==='number'?number(patient['Coronary artery calcium score'] as number):display(patient['Coronary artery calcium score'])}</dd></div>
+          {[
             ['Smoking','Smoker'],['Hypertension','Hypertension'],['Diabetes','Diabetes'],['Dyslipidemia','Dyslipidemia'],
-            ['Dyspnea','Dyspnea'],['Chest pain','Type of chest pain '],['Family history of CAD','Familiarity for CAD'],['BMI','Body mass index (BMI)'],
-          ].map(([label,key],index)=><div key={key} className={index===2||index===6?'ai-group-start':''}><dt>{label}</dt><dd>{typeof patient[key]==='number'?number(patient[key] as number):display(patient[key])}</dd></div>)}</dl>
-        </>}
+            ['Family history of CAD','Familiarity for CAD'],['BMI','Body mass index (BMI)'],
+            ['Dyspnea','Dyspnea'],['Chest pain','Type of chest pain '],
+          ].map(([label,key])=><div key={key} className={key==='Smoker'||key==='Dyspnea'?'ai-group-start':''}><dt>{label}</dt><dd>{typeof patient[key]==='number'?number(patient[key] as number):display(patient[key])}</dd></div>)}
+        </dl>}
         {tab==='Features'&&<>
           <div className="ai-feature-tools"><label>Model <select aria-label="Model" value={model} onChange={e=>setModel(e.target.value as AiModel)}><option value="pri">PRI-only</option><option value="adjusted">Adjusted</option></select></label></div>
           <table className="ai-features"><thead><tr><th>Feature</th><th title="Native patient-level feature value, before harmonization and scaling. P indicates the empirical percentile in the derivation cohort; ties use midrank.">Patient<small>value · percentile</small></th><th title="Native-value distribution in the derivation cohort only. IQR is the 25th–75th percentile; missing/non-finite observations are excluded.">Derivation<small>median (IQR)</small></th><th title="Association with increasing feature values: hazard ratio per training standard deviation after preprocessing, conditional on the other predictors. Focus or hover for the 95% confidence interval.">HR / SD</th></tr></thead>

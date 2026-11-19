@@ -1,8 +1,11 @@
 import {test,expect} from '@playwright/test';
 import {packCpeVolume,setCpeMembership,volumeOpacityNodes} from '../src/cpeVolumeData';
-import type {Case,Vec3} from '../src/types';
+import type {Case,Vec3,TissueReference,BloodPoolReference} from '../src/types';
 import {AxialVolume} from '../src/axialVolume';
 import type {Page} from '@playwright/test';
+
+const reference:TissueReference={available:true,version:2,anchors:[[-1024,-1024],[4096,4096]],fat:{voxels:1000,p01HU:-180,p10HU:-140,p50HU:-100,p90HU:-40,p99HU:-30},myocardium:{voxels:1000,p01HU:50,p10HU:80,p50HU:100,p90HU:150,p99HU:200}};
+const blood:BloodPoolReference={available:true,version:2,p01HU:200,p10HU:230,p50HU:250,p90HU:280,p99HU:350};
 
 async function installVolumePhantom(page:Page,emptyMask=false){
   const shape:Vec3=[64,32,64],spacing=.5,n=shape.reduce((a,b)=>a*b,1),ct=new Int16Array(n).fill(3000),labels=new Uint8Array(n),cpe=new Uint8Array(n),empty=new Uint8Array(n);
@@ -19,7 +22,7 @@ async function installVolumePhantom(page:Page,emptyMask=false){
   const faces=[[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]],cells=new Uint32Array(faces.flatMap(f=>[3,...f]));
   await page.route('**/api/**',route=>{
     const path=new URL(route.request().url()).pathname;
-    if(path==='/api/cases/volume-phantom')return route.fulfill({json:{patientId:'volume-phantom',geometry:{shape,affineLPS},sampling:{widthPixels:50,resolutionMm:.5,pointSpacingMm:.5},vessels:{LAD:line,LCx:line,RCA:line},volumes:{LAD:volume,LCx:volume,RCA:volume},featureMaps:{LAD:[],LCx:[],RCA:[]},surfaces:{lumen_merged:{points:base+'points',cells:base+'cells',vertices:8,triangles:12}},axialVolume:{ct:base+'ct',labels:base+'labels',scalarType:'int16'}}});
+    if(path==='/api/cases/volume-phantom')return route.fulfill({json:{tissueReference:reference,bloodPoolReference:blood,patientId:'volume-phantom',geometry:{shape,affineLPS},sampling:{widthPixels:50,resolutionMm:.5,pointSpacingMm:.5},vessels:{LAD:line,LCx:line,RCA:line},volumes:{LAD:volume,LCx:volume,RCA:volume},featureMaps:{LAD:[],LCx:[],RCA:[]},surfaces:{lumen_merged:{points:base+'points',cells:base+'cells',vertices:8,triangles:12}},axialVolume:{ct:base+'ct',labels:base+'labels',scalarType:'int16'}}});
     const array=path.endsWith('/ct')?ct:path.endsWith('/labels')?labels:path.endsWith('/cpe')?cpe:path.endsWith('/points')?vertices:path.endsWith('/cells')?cells:empty;
     return route.fulfill({body:Buffer.from(array.buffer)});
   });
@@ -54,12 +57,12 @@ test('CPE packing preserves native HU and oblique geometry with separate, revers
 });
 
 test('attenuation opacity controls suppress the requested HU bands without changing HU coordinates',()=>{
-  const gains={fat:1,low:1,intermediate:1,high:1},base=volumeOpacityNodes('balanced',1,gains);
-  expect(volumeOpacityNodes('balanced',0,gains).every(([,v])=>v===0)).toBe(true);
-  const noFat=volumeOpacityNodes('balanced',1,{...gains,fat:0});
+  const gains={fat:1,low:1,intermediate:1,high:1},base=volumeOpacityNodes('balanced',1,gains,reference,blood,0);
+  expect(volumeOpacityNodes('balanced',0,gains,reference,blood,0).every(([,v])=>v===0)).toBe(true);
+  const noFat=volumeOpacityNodes('balanced',1,{...gains,fat:0},reference,blood,0);
   expect(noFat.find(([x])=>x===-165)![1]).toBe(0);expect(noFat.find(([x])=>x===650)![1]).toBe(base.find(([x])=>x===650)![1]);
-  expect(volumeOpacityNodes('fat',1,gains).find(([x])=>x===-165)![1]).toBeGreaterThan(base.find(([x])=>x===-165)![1]);
-  expect(volumeOpacityNodes('dense',1,gains).find(([x])=>x===650)![1]).toBeGreaterThan(base.find(([x])=>x===650)![1]);
+  expect(volumeOpacityNodes('fat',1,gains,reference,blood,0).find(([x])=>x===-165)![1]).toBeGreaterThan(base.find(([x])=>x===-165)![1]);
+  expect(volumeOpacityNodes('dense',1,gains,reference,blood,0).find(([x])=>x===650)![1]).toBeGreaterThan(base.find(([x])=>x===650)![1]);
 });
 
 test('rendered phantom separates HU bands, excludes bright background and survives mask-range changes',async({page})=>{
