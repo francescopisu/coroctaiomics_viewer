@@ -154,7 +154,7 @@ The imaging workspace keeps its minimal toolbar, panel names, rotation angle, or
 
 The 3D panel opens in **anatomy** mode with ascending aorta and lumen, while CPE masks and radiomic maps start hidden. **Show periluminal envelopes** toggles both the CPE volume rendering and the binary masks in the linked image panels. Enabling it uses Balanced transfer functions and Unlit lighting to ray-cast native CCTA voxels within the union of the saved CPE masks. It does not generate tissue segmentations or alter source images. Native CT and labels are already resident, so the first toggle needs no additional imaging download. Its cancellable volume packing runs on demand with an inline status; it never restarts the initial loader. Toggling off returns to anatomy and hides the masks, retaining prepared rendering resources for reuse. Radiomic maps have a separate toggle. Up to three loaded patient sessions remain resident as described below.
 
-**Settings** keeps only overall density, the four HU-band opacity gains and anatomical context opacity. Defaults match the supplied reference: density **0.9**, Fat range **1.05**, Low HU **2**, Intermediate **0**, High HU **2**, context **1.0**. The Anatomy selector, preset/lighting selectors and Cut at section control are removed from the interface. Alternative presets, lighting modes and anatomical rendering remain available internally; cutaway clipping is removed. Band ranges are Fat range (−190…−30 HU), Low HU (−30…30 HU), Intermediate (30…350 HU) and High HU (≥350 HU). The attenuation transfer functions have short continuous transitions between bands. They are independent of the CCTA window/level and the Jet radiomic colormap. The legend's hover text gives the ranges. These are illustrative display bands, **not validated plaque composition, histology, fat classification or inflammation labels**. Contrast, kVp and partial volume influence attenuation; high HU can include contrast contamination as well as calcium. Only material actually present in the CPE can be shown. See the [SCCT quantitative CCTA consensus](https://pubmed.ncbi.nlm.nih.gov/38849237/).
+**Settings** keeps only overall density, the four HU-band opacity gains and anatomical context opacity. Defaults match the supplied reference: density **0.9**, Fat range **1.05**, Low HU **2**, Intermediate **0**, High HU **2**, context **0.5**. The Anatomy selector, preset/lighting selectors and Cut at section control are removed from the interface. Alternative presets, lighting modes and anatomical rendering remain available internally; cutaway clipping is removed. Band ranges are Fat range (−190…−30 HU), Low HU (−30…30 HU), Intermediate (30…350 HU) and High HU (≥350 HU). The attenuation transfer functions have short continuous transitions between bands. They are independent of the CCTA window/level and the Jet radiomic colormap. The legend's hover text gives the ranges. These are illustrative display bands, **not validated plaque composition, histology, fat classification or inflammation labels**. Contrast, kVp and partial volume influence attenuation; high HU can include contrast contamination as well as calcium. Only material actually present in the CPE can be shown. See the [SCCT quantitative CCTA consensus](https://pubmed.ncbi.nlm.nih.gov/38849237/).
 
 The native CT is packed as two Float32 channels: **HU × support** and **support**. Mask support is derived from finite CT and the original CPE bits, explicitly excluding the lumen. Trilinearly sampled HU is reconstructed by dividing by interpolated support *before* color/opacity lookup; coverage then scales optical depth rather than acting as a second material. Thus transparent background and voxels in another hidden territory cannot dilute boundary HU, create artificial low-attenuation rims or bleed dense structures into the rendered region. The original native CT and labels are untouched. Per-vessel CPE checkboxes in the gear menu select included territories; their union avoids double-counting overlapping CPEs. The **CPE masks** control inside the gear menu can also adjust binary surfaces/2D fills independently of the CT volume. In volume mode, the colored CPE surface shells are suppressed and lumen/aorta/centerlines use the context-opacity multiplier. The existing anatomical renderer remains the internal fallback if no finite CPE voxels are available, with an inline retry message.
 
@@ -356,7 +356,69 @@ and renderer-setup timings are available in the 3D scene DOM data attributes
 volume-pack-ms and volume-setup-ms for further profiling.
 
 In the open-day viewer, **Context**, **Aorta opacity** and **Lumen opacity**
-share one 3D anatomy-opacity value, initially **100%**. Both aorta and lumen
+share one 3D anatomy-opacity value, initially **50%**. Both aorta and lumen
 use that value directly in anatomy and CPE volume modes; switching modes
 retains it and applies no additional opacity multiplier. The lumen contours
 in the linked image views retain their independent display opacity.
+
+### Experimental blood-pool-adaptive high-HU rendering
+
+The **Blood pool** reference mode raises the white/high-HU boundary to
+`max(350 HU, aortic blood P99)`. A gradual 20-HU opacity transition surrounds
+that boundary. Selecting **Fixed HU** restores the original 350-HU transfer functions.
+This suppresses blood-like bright rendering; it does **not** identify calcium,
+veins or muscle, and can suppress calcium whose attenuation overlaps blood.
+Source HU, masks, radiomic maps, clinical inputs and PRI predictions are unchanged.
+
+Preparation fills closed axial aorta-shell cross-sections, uses their largest
+component and samples 3-mm-radius central ROIs across up to 31 slices in the
+central half of the segment. Sample centres require at least 6 mm of interior
+clearance and voxels at least 3 mm from the boundary. Statistics/ROI coordinates
+are cached in the manifest; startup has no extra volume download or sampling.
+If a reference cannot be derived, the viewer keeps fixed 350 HU and disables
+the adaptive control. Inspect the ROIs before interpreting a new reference.
+
+Existing prepared cases can add the reference without rebuilding their images:
+
+```sh
+.venv/bin/python -m backend.blood_pool --case 814
+```
+
+`./prepare.sh` also updates this metadata for current caches. Blood-pool ROIs
+are derived display metadata; source CPE and aorta masks remain read-only.
+
+### Experimental multi-reference rendering
+
+**3D Settings → Reference** offers **Fixed HU**, **Blood pool** and
+**Multi-reference**. The latter is the default when all references are usable;
+otherwise the viewer falls back to Blood pool or Fixed HU. This is a custom
+visualization prototype, not a reproduced or validated tissue-classification method.
+
+Multi-reference uses native HU percentiles from three sources: CPE fat-range
+voxels (−190…−30 HU), eroded myocardium, and the central aortic blood ROIs.
+A monotonic piecewise calibration maps color and opacity knots to those native
+reference distributions. The CT scalar buffer and transfer-function endpoints
+(−1024…4096 HU) stay unchanged. Myocardium uses up to 31 slices, more than 2 mm
+from its in-plane mask boundary and 3 mm from segment ends. Reference overlap,
+insufficient samples or grid mismatch disables multi-reference rather than
+forcing invalid calibration. Source masks, CT, maps and PRI inputs are read-only.
+
+**Blood/muscle fade** defaults to 80%. It reduces opacity for intensities
+matching either reference distribution, with a plateau between P10 and P90
+and smooth linear tails to P1/P99; fat-range HU ≤ −30 are protected from this
+fade. Setting zero preserves the calibrated colors without attenuation-based
+fading. Tissues—including plaque—with overlapping intensities may also fade.
+No vein/chamber labels or plaque identities are inferred from these colors.
+
+Reference statistics and calibration anchors are cached in the case manifest.
+`./prepare.sh` updates both references without rebuilding unchanged images.
+For a current individual cache:
+
+```sh
+.venv/bin/python -m backend.tissue_reference --case 814
+```
+
+Hard-refresh a resident viewer after updating reference metadata. Changing
+rendering mode or fade updates the transfer functions without downloading or
+repacking CT data. Settings display the native reference medians and the active
+high-HU threshold; band tooltips show the calibrated native HU intervals.

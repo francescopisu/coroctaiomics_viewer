@@ -1,5 +1,5 @@
 import type {AxialVolume} from './axialVolume';
-import type {Case,ImageGeometry,Vec3} from './types';
+import type {BloodPoolReference,TissueReference,HuReference,Case,ImageGeometry,Vec3} from './types';
 
 export interface CpeVolumeData {info:ImageGeometry;values:Float32Array;membership:Uint8Array;indices:Uint32Array;hu:Float32Array;start:Vec3;count:number;activeBits:number}
 const yieldFrame=()=>new Promise<void>(resolve=>setTimeout(resolve,0));
@@ -57,10 +57,52 @@ export const attenuationBands:{id:AttenuationBand;label:string;range:string;colo
   {id:'intermediate',label:'Intermediate',range:'30 to 350 HU',color:'#bb9680'},
   {id:'high',label:'High HU',range:'≥350 HU',color:'#e4edf3'},
 ];
-export function volumeOpacityNodes(preset:VolumePreset,density:number,gain:Record<AttenuationBand,number>):[number,number][]{
+export function highHuThreshold(reference:BloodPoolReference|undefined,adaptive:boolean){
+  const value=reference?.thresholdHU;
+  return adaptive&&reference?.available&&typeof value==='number'&&Number.isFinite(value)&&value>=350&&value<3000?value:350;
+}
+/** Inverse piecewise display calibration; source HU remain unchanged. */
+export function calibratedHu(value:number,reference?:TissueReference){
+  const anchors=reference?.available?reference.anchors:undefined;if(!anchors?.length)return value;
+  if(value<=anchors[0][0])return anchors[0][1];
+  for(let i=1;i<anchors.length;i++)if(value<=anchors[i][0]){
+    const [x0,y0]=anchors[i-1],[x1,y1]=anchors[i];return y0+(y1-y0)*(value-x0)/(x1-x0);
+  }
+  return anchors.at(-1)![1];
+}
+export function attenuationRange(id:AttenuationBand,threshold:number,reference?:TissueReference){
+  const lower=Math.round(calibratedHu(-30,reference)),soft=Math.round(calibratedHu(30,reference));
+  return id==='high'?`≥${Math.round(threshold)} HU`:id==='intermediate'?`${soft} to ${Math.round(threshold)} HU`:id==='low'?`${lower} to ${soft} HU`:attenuationBands[0].range;
+}
+export function volumeColorNodes(threshold=350,reference?:TissueReference):number[][]{
+  const t=reference?.available?350:threshold;
+  return [[-1024,.32,.22,.12],[-190,.68,.44,.16],[-140,.86,.72,.45],[-35,.91,.75,.48],
+    [-25,.68,.22,.28],[25,.78,.35,.39],[40,.61,.38,.28],[180,.78,.63,.51],
+    [t-15,.8,.71,.61],[t+15,.82,.9,.96],[Math.max(700,t+100),.96,.97,1],[4096,1,1,1]]
+    .map(([x,r,g,b])=>[calibratedHu(x,reference),r,g,b]);
+}
+function referenceAffinity(hu:number,reference:Partial<HuReference>|undefined){
+  const {p01HU:lo,p10HU:a,p90HU:b,p99HU:hi}=reference??{};
+  if(lo==null||a==null||b==null||hi==null||hu<=lo||hu>=hi)return 0;
+  return Math.max(0,Math.min(1,(hu-lo)/Math.max(a-lo,1),(hi-hu)/Math.max(hi-b,1)));
+}
+export function contextAffinity(hu:number,myocardium:Partial<HuReference>|undefined,blood:Partial<HuReference>|undefined){
+  return hu<=-30?0:Math.max(referenceAffinity(hu,myocardium),referenceAffinity(hu,blood));
+}
+export function volumeOpacityNodes(preset:VolumePreset,density:number,gain:Record<AttenuationBand,number>,threshold=350,reference?:TissueReference,blood?:BloodPoolReference,fade=.8):[number,number][]{
   const scale=preset==='fat'?[2,.65,.45,.7]:preset==='dense'?[.18,.8,1.2,1.5]:[1,1,1,1];
-  const [fat,low,mid,high]=attenuationBands.map((b,i)=>Math.max(0,gain[b.id])*scale[i]*density);
-  return [[-1024,0],[-200,0],[-190,.012*fat],[-165,.07*fat],[-45,.07*fat],[-30,.025*fat],
-    [-25,.14*low],[25,.14*low],[35,.18*mid],[250,.18*mid],[340,.24*mid],
-    [360,.4*high],[650,.65*high],[1500,.85*high],[4096,.9*high]].map(([x,y])=>[x,Math.min(.98,Math.max(0,y))]);
+  const [fat,low,mid,high]=attenuationBands.map((b,i)=>Math.max(0,gain[b.id])*scale[i]*density),t=reference?.available?350:threshold;
+  const base:[number,number][]=[[-1024,0],[-200,0],[-190,.012*fat],[-165,.07*fat],[-45,.07*fat],[-30,.025*fat],
+    [-25,.14*low],[25,.14*low],[35,.18*mid],[250,.18*mid],[t-10,.24*mid],
+    [t+10,.4*high],[Math.max(650,t+100),.65*high],[Math.max(1500,t+200),.85*high],[4096,.9*high]]
+    .map(([x,y])=>[calibratedHu(x,reference),Math.min(.98,Math.max(0,y))]);
+  if(!reference?.available)return base;
+  // Fine HU sampling keeps reference-dependent fades continuous on the GPU.
+  const xs=[...new Set([...base.map(([x])=>x),...Array.from({length:2561},(_,i)=>-1024+2*i)])].sort((a,b)=>a-b);
+  let upper=1;
+  return xs.map(x=>{
+    while(upper<base.length-1&&base[upper][0]<x)upper++;
+    const [lo,lv]=base[upper-1],[hi,hv]=base[upper];const opacity=lv+(hv-lv)*(x-lo)/(hi-lo);
+    return [x,opacity*(1-Math.max(0,Math.min(1,fade))*contextAffinity(x,reference.myocardium,blood))];
+  });
 }

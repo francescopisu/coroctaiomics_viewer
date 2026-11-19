@@ -17,7 +17,7 @@ test('all anatomy opacity sliders share a full-range value across anatomy and CP
     await expect(aorta).toHaveValue(String(value));await expect(lumen).toHaveValue(String(value));
     await expect(scene).toHaveAttribute('data-aorta-opacity',String(value));await expect(scene).toHaveAttribute('data-lumen-opacity',String(value));
   };
-  await expect(scene).toHaveAttribute('data-render-mode','anatomy');await check(1);
+  await expect(scene).toHaveAttribute('data-render-mode','anatomy');await check(.5);
   const cross=await page.locator('.cross canvas').evaluate(c=>(c as HTMLCanvasElement).toDataURL()),baseline=requests.length;
   await gear.click();await setSlider(aorta,.37);await check(.37);
   await setSlider(lumen,.68);await check(.68);await gear.click();
