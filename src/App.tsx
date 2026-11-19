@@ -139,9 +139,7 @@ export default function App({patientId,toolbarHost,active=true,onReady}:{patient
       {mapsVisible&&availableFeatures.length>0&&<select className="feature-select" aria-label="Radiomic feature map" value={featureId} onChange={e=>update('featureIds',{...c.featureIds,[c.vessel]:e.target.value})}>
         {availableFeatures.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
       </select>}
-      {featureInfo&&<select className="scale-select" aria-label="Feature scale" value={scaleMode} title="Derivation reference: shared cohort percentiles. Balanced and Raw zero: patient-specific scales." onChange={e=>update('featureScale',e.target.value as Controls['featureScale'])}><option value="cohort" disabled={!featureInfo.cohortReference}>Derivation reference</option><option value="balanced">Balanced</option><option value="raw">Raw zero</option></select>}
       {featureInfo&&scale&&<div className="feature-scale" aria-label="Feature color scale" title={`${featureInfo.name}: ${cohort?`local feature percentile in ${cohort.nPatients} derivation patients; equal patient weights; reference ${cohort.id}`:scaleMode==='balanced'?'patient 2nd percentile / median / 98th percentile':'patient raw, zero-centered'}`}><i style={{background:FEATURE_GRADIENT}}/><div>{(cohort?['P0','P50','P100']:(scale as [number,number,number]).map(featureNumber)).map((label,i)=><span key={i}>{label}</span>)}</div></div>}
-      {cohort&&<span className="cohort-reference-count" title="Provisional voxel-wise derivation reference; colors represent feature percentiles.">{cohort.nPatients} reference patients</span>}
       {featureInfo&&!feature&&<span className="map-loading">Loading map…</span>}
     </div>
     {error&&<div className="error" role="alert">{error}<button onClick={()=>location.reload()}>Reload</button></div>}
