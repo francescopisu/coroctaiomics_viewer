@@ -15,3 +15,6 @@ __pycache__/
 
 # Local cohort display reference exported from the cluster.
 /config/radiomic-cohort-reference.local.json
+
+# Finder metadata at any directory depth.
+.DS_Store
