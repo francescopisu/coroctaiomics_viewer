@@ -21,9 +21,10 @@ export class FeatureVolume {
     const scale=featureScale(this.info,mode),[lo,mid,hi]=Array.isArray(scale)?scale:[0,0,0],f=(x:number)=>x.toExponential(12),dims=this.info.dimensions.map(f).join(',');
     const shader=`
       float support = tvalue.g;
-      float value = ${f(this.info.minimum)} + (tvalue.r / max(support, 1.0e-6)) * ${f(this.info.maximum-this.info.minimum)};
-      ${!Array.isArray(scale)?cohortShader(scale):`float intensity = ${lo===hi?'0.5':`value < ${f(mid)} ? 0.5 * (value - (${f(lo)})) / ${f(Math.max(mid-lo,1e-30))} : 0.5 + 0.5 * (value - (${f(mid)})) / ${f(Math.max(hi-mid,1e-30))}`};`}
       float coverage = ${smooth?'smoothstep(0.45, 0.55, tvalue.b)':`texture(volumeTexture, (floor(volumePosTC * vec3(${dims})) + vec3(0.5)) / vec3(${dims})).a`};
+      if(support <= 1.0e-6 || coverage <= 0.0)discard;
+      float value = ${f(this.info.minimum)} + (tvalue.r / max(support, 1.0e-6)) * ${f(this.info.maximum-this.info.minimum)};
+      ${!Array.isArray(scale)?cohortShader():`float intensity = ${lo===hi?'0.5':`value < ${f(mid)} ? 0.5 * (value - (${f(lo)})) / ${f(Math.max(mid-lo,1e-30))} : 0.5 + 0.5 * (value - (${f(mid)})) / ${f(Math.max(hi-mid,1e-30))}`};`}
       gl_FragData[0] = vec4(texture2D(colorTexture1, vec2(clamp(intensity, 0.0, 1.0), 0.5)).rgb, support > 1.0e-6 ? coverage * opacity : 0.0);
     `;
     this.shaders.set(key,shader);return shader;

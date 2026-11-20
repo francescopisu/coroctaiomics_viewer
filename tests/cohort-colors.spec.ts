@@ -32,8 +32,25 @@ test('all four image views use cohort colors with a full-size lookup and no extr
       const data=ctx.getImageData(0,0,im.width,im.height).data;let count=0;for(let i=0;i<data.length;i+=4)if(rgb.every((v,j)=>Math.abs(v-data[i+j])<=6))count++;return count;
     },{base64:png.toString('base64'),rgb});expect(count,selector).toBeGreaterThan(10);
   }
+  await page.evaluate(()=>{
+    (window as any).slicePaintCount=0;(window as any).cprDrawCount=0;
+    const proto=CanvasRenderingContext2D.prototype,draw=proto.drawImage;
+    proto.drawImage=function(...args:any[]){if(this.canvas.matches('.cross canvas,.axial canvas'))(window as any).slicePaintCount++;return (draw as any).apply(this,args);};
+    const gl=(document.querySelector('.cpr-render canvas') as HTMLCanvasElement).getContext('webgl2')!,drawArrays=gl.drawArrays;
+    gl.drawArrays=function(...args:Parameters<typeof drawArrays>){(window as any).cprDrawCount++;return drawArrays.apply(this,args);};
+  });
+  const curved=page.locator('.curved'),box=(await curved.boundingBox())!;
+  await page.mouse.move(box.x+box.width*.5,box.y+box.height*.5);await page.mouse.down();await page.mouse.move(box.x+box.width*.5+20,box.y+box.height*.5,{steps:3});await page.mouse.up();
+  await expect(curved.locator('.angle')).not.toHaveText('0°');
+  expect(await page.evaluate(()=>(window as any).slicePaintCount)).toBe(0);
+  await page.evaluate(()=>{(window as any).cprDrawCount=0;});
+  const previousIndex=await page.locator('.cross canvas').getAttribute('data-centreline-index');
+  await page.getByRole('group',{name:'Orthogonal slice navigation',exact:true}).press('ArrowDown');
+  await expect(page.locator('.cross canvas')).not.toHaveAttribute('data-centreline-index',previousIndex!);
+  expect(await page.evaluate(()=>(window as any).cprDrawCount)).toBe(0);
   const before=requests.length;
   await page.screenshot({path:'test-results/cohort-colors.png'});
+  await page.getByRole('group',{name:'Orthogonal slice navigation',exact:true}).press('ArrowUp');
   await page.getByRole('button',{name:'Show radiomic maps',exact:true}).click();expect(await page.locator('.cross canvas').evaluate(c=>(c as HTMLCanvasElement).toDataURL())).toBe(native);
   await page.getByRole('button',{name:'Show radiomic maps',exact:true}).click();await expect(page.getByLabel('Feature color scale')).toHaveText('P0P50P100');
   expect(requests.slice(before).filter(p=>p.includes('/assets/'))).toEqual([]);

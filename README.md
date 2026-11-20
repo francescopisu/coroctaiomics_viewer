@@ -426,3 +426,12 @@ Hard-refresh a resident viewer after updating reference metadata. Changing
 rendering mode or fade updates the transfer functions without downloading or
 repacking CT data. Settings display the native reference medians and the active
 high-HU threshold; band tooltips show the calibrated native HU intervals.
+
+Radiomic-map performance: cohort knots are stored in a small, nearest-sampled
+RGBA32F GPU texture instead of a large dynamically indexed GLSL constant array.
+The same CDF/midrank calculation still follows scalar interpolation. Transparent
+feature pixels skip percentile lookup. The feature palette is reused across
+frames; slice images are cached separately from crosshairs/annotations, and
+moving the selected vessel index updates CPR markers without redrawing unchanged
+CPR images. These changes leave source values, reference statistics, colors and
+patient AI results unchanged.

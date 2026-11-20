@@ -6,6 +6,8 @@ import vtkOpenGLImageCPRMapper from '@kitware/vtk.js/Rendering/OpenGL/ImageCPRMa
 // @ts-expect-error vtk.js does not publish types for its view-node registry.
 import {registerOverride} from '@kitware/vtk.js/Rendering/OpenGL/ViewNodeFactory';
 import macro from '@kitware/vtk.js/macros';
+import vtkOpenGLTexture from '@kitware/vtk.js/Rendering/OpenGL/Texture';
+import type {CohortReference} from './cohortReference';
 
 const footprintDerivatives=`
   vec3 pixelFootprintX = dFdx(volumePosTC);
@@ -36,10 +38,32 @@ registerOverride('vtkImageCPRMapper',macro.newInstance((mapper:any,model:any,ini
   vtkOpenGLImageCPRMapper.extend(mapper,model,initialValues);
   const build=mapper.buildShaders,needs=mapper.getNeedToRebuildShaders;
   const spec=()=>mapper.getRenderable()?.getViewSpecificProperties()?.OpenGL??{};
+  let cohortTexture:any,textureReference:CohortReference|undefined;
+  const draw=mapper.renderPieceDraw,parameters=mapper.setMapperShaderParameters;
+  mapper.renderPieceDraw=(...args:unknown[])=>{
+    const reference=spec().FeatureCohortReference as CohortReference|undefined;
+    if(!reference)return draw(...args);
+    if(reference!==textureReference||!cohortTexture?.getHandle()){
+      cohortTexture?.releaseGraphicsResources();cohortTexture?.delete();
+      const count=reference.knots.length,gl=model.context;
+      if(!count||count>Math.min(65536,gl.getParameter(gl.MAX_TEXTURE_SIZE)))throw new Error('Unsupported cohort reference texture size.');
+      const values=new Float32Array(count*4);reference.knots.forEach((k,i)=>values.set(k,i*4));
+      cohortTexture=vtkOpenGLTexture.newInstance();cohortTexture.setOpenGLRenderWindow(model._openGLRenderWindow);cohortTexture.enableUseHalfFloat(false);cohortTexture.setInternalFormat(gl.RGBA32F);
+      if(!cohortTexture.create2DFromRaw({width:count,height:1,numComps:4,dataType:'Float32Array',data:values}))throw new Error('Unable to upload cohort reference.');
+      textureReference=reference;
+    }
+    cohortTexture.activate();try{return draw(...args);}finally{cohortTexture.deactivate();}
+  };
+  mapper.setMapperShaderParameters=(cellBO:any,...args:unknown[])=>{
+    parameters(cellBO,...args);const reference=spec().FeatureCohortReference as CohortReference|undefined,program=cellBO.getProgram();
+    if(reference&&program.isUniformUsed('cohortReferenceTexture')){program.setUniformi('cohortReferenceTexture',cohortTexture.getTextureUnit());program.setUniformi('cohortKnotCount',reference.knots.length);}
+  };
+  mapper.delete=macro.chain(()=>{cohortTexture?.releaseGraphicsResources();cohortTexture?.delete();},mapper.delete);
   let previous:string|undefined;
   mapper.getNeedToRebuildShaders=(...args:unknown[])=>{const normal=needs(...args),s=spec(),current=JSON.stringify([s.FeatureSamplingShader,!!s.PixelFootprintAntialiasing,s.LumenOutlineWidth,s.LumenSmoothingOffset]),changed=current!==previous;previous=current;return normal||changed;};
   mapper.buildShaders=(shaders:{Fragment:string},...args:unknown[])=>{
     build(shaders,...args);const s=spec();
+    if(s.FeatureCohortReference)shaders.Fragment=shaders.Fragment.replace('void main()', 'uniform sampler2D cohortReferenceTexture;\nuniform int cohortKnotCount;\nvoid main()');
     if(s.PixelFootprintAntialiasing){
       const bounds='if (any(lessThan(volumePosTC, vec3(0.0)))',sample='vec4 tvalue = texture(volumeTexture, volumePosTC);';
       if(!shaders.Fragment.includes(bounds)||!shaders.Fragment.includes(sample))throw new Error('Unsupported vtk.js CPR sampling template');
