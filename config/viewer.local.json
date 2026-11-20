@@ -15,8 +15,7 @@
   "patientLabels": {
     "814": "A-001",
     "165": "B-002",
-    "96": "C-003",
-    "893": "D-004"
+    "96": "C-003"
   },
   "patients": [
     {
@@ -34,11 +33,6 @@
       "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/501_1000/814.nii.gz",
       "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/814",
       "clinical": "patients/814.json"
-    },
-    {
-      "id": "893",
-      "ct": "/Volumes/X9Pro/datasets/CoroCTAiomics_final_export/501_1000/893.nii.gz",
-      "output": "/Volumes/X9Pro/output/CoroCTAiomics/v2/893"
     }
   ]
 }
