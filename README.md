@@ -427,6 +427,45 @@ rendering mode or fade updates the transfer functions without downloading or
 repacking CT data. Settings display the native reference medians and the active
 high-HU threshold; band tooltips show the calibrated native HU intervals.
 
+### Windows portable Open Day release
+
+`backend.portable` and `tools/build_windows_portable.py` package the current UI
+without merging the older portable branch's frontend. Preparation/inference stay
+on the workstation; Windows uses frozen patient reports, native imaging assets,
+and the bundled radiomic cohort reference. No Python/Conda/Node installation or
+administrator permissions are required for normal use.
+
+For this release, the patients are 814 (A-001), 165 (B-002) and 96 (C-003).
+Export fresh packages before assembling the ZIP:
+
+```sh
+.venv/bin/python -m backend.export_patient --case 814 --output releases/openday-patients-2026-11-19/814.cctacase
+.venv/bin/python -m backend.export_patient --case 165 --output releases/openday-patients-2026-11-19/165.cctacase
+.venv/bin/python -m backend.export_patient --case 96 --output releases/openday-patients-2026-11-19/96.cctacase
+.venv/bin/python tools/build_windows_portable.py --offline \
+  --output releases/CoroCTAiomics-OpenDay-Windows-x64-2026-11-19 \
+  --patient releases/openday-patients-2026-11-19/814.cctacase \
+  --patient releases/openday-patients-2026-11-19/165.cctacase \
+  --patient releases/openday-patients-2026-11-19/96.cctacase
+```
+
+Choose new output paths when rebuilding; existing exports/releases are preserved.
+Offline builds reuse the cached official embedded CPython 3.13 x64 runtime and
+pinned Windows wheels. The local cohort-reference JSON is explicitly included
+although ignored by Git. `build-info.json` records application hashes, runtime
+checksums, source branch/revision and whether the source tree had pending changes.
+
+Extract the complete ZIP on Windows, run **Check Installation.cmd**, then
+**Start Viewer.cmd**. First launch imports the three seed packages; later launches
+reuse them. Open Day storage is `%LOCALAPPDATA%\CoroCTAiomics-OpenDay-2026`, separate
+from the older demonstration, so old P001 data do not enter this patient list.
+Aliases can be edited in `application/config/viewer.local.json`. Add future
+prepared patients with `"Start Viewer.cmd" --import-patient "path\case.cctacase"`,
+then add their display aliases to that file. The simplified UI has no import menu.
+
+The package can be assembled and its application/data paths checked on macOS;
+Windows-native DLL loading and the target PC's GPU must still be checked on Windows.
+
 Radiomic-map performance: cohort knots are stored in a small, nearest-sampled
 RGBA32F GPU texture instead of a large dynamically indexed GLSL constant array.
 The same CDF/midrank calculation still follows scalar interpolation. Transparent

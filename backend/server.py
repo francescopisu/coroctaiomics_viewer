@@ -3,11 +3,11 @@ import json
 from functools import lru_cache
 import numpy as np
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
-from .data import ROOT, read_case_config, configuration_key, CASE_INTERPRETATION, catalog_configurations
+from .data import ROOT, read_case_config, configuration_key, CASE_INTERPRETATION, catalog_configurations, case_directory
 
 class ViewerGZipMiddleware(GZipMiddleware):
     async def __call__(self, scope, receive, send):
@@ -31,7 +31,7 @@ def manifest(case_id,case_config=None):
     except (OSError,ValueError,KeyError) as error: raise HTTPException(503,f'Invalid case configuration: {error}')
     if case_id != configured_id:
         raise HTTPException(404, 'Patient is not in the case catalogue')
-    path = ROOT / 'cache' / case_id / 'manifest.json'
+    path = case_directory(case_id) / 'manifest.json'
     if not path.is_file():
         raise HTTPException(503, 'Case cache missing. Run python -m backend.prepare first.')
     m=json.loads(path.read_text())
@@ -53,6 +53,8 @@ def get_patient_labels():
 def get_patients():
     try: cases=catalog_configurations()
     except (OSError,ValueError,KeyError):raise HTTPException(503,'Patient registry unavailable. Check config/viewer.local.json.')
+    from .portable import enabled, summaries
+    if enabled():return JSONResponse({'patients':summaries(cases)},headers={'Cache-Control':'no-store'})
     from .ai import reference, infer, risk_stratum, patient_record
     try: ai=reference()
     except (OSError,ValueError,KeyError,TypeError):ai=None
@@ -60,7 +62,7 @@ def get_patients():
     for pid in cases:
         try:
             m=manifest(pid,cases[pid])
-            available=bool(m.get('axialVolume')) and all((ROOT/'cache'/pid/name).is_file() for name in m['assets'])
+            available=bool(m.get('axialVolume')) and all((case_directory(pid)/name).is_file() for name in m['assets'])
         except HTTPException:available=False
         try:record=patient_record(pid,ai,cases[pid]) if ai else None
         except (OSError,ValueError,TypeError,KeyError):record=None
@@ -95,7 +97,7 @@ def get_asset(case_id: str, name: str):
     m = manifest(case_id)
     if name not in m['assets']:
         raise HTTPException(404, 'Unknown case asset')
-    path = ROOT / 'cache' / case_id / name
+    path = case_directory(case_id) / name
     if not path.is_file():
         raise HTTPException(503, 'Incomplete cache; rerun preparation')
     return FileResponse(path, media_type='application/octet-stream', headers={'Cache-Control': 'no-cache'})
@@ -115,7 +117,7 @@ def get_ai(case_id: str):
 
 @lru_cache(maxsize=1)
 def axial_arrays(case_id, revision):
-    directory = ROOT/'cache'/case_id
+    directory = case_directory(case_id)
     return (np.load(directory/'axial.ct.npy',mmap_mode='r'),np.load(directory/'axial.labels.npy',mmap_mode='r'))
 
 @app.get('/api/cases/{case_id}/axial/{index}')
@@ -136,7 +138,7 @@ def find_feature(m,feature_id):
 
 @lru_cache(maxsize=1)
 def feature_arrays(case_id,revision,feature_id):
-    m=manifest(case_id);f=find_feature(m,feature_id);directory=ROOT/'cache'/case_id
+    m=manifest(case_id);f=find_feature(m,feature_id);directory=case_directory(case_id)
     names=[f[k].rsplit('/',1)[-1] for k in ['values','valid']]
     if any(name not in m['assets'] for name in names):raise HTTPException(404,'Unlisted feature asset')
     shape=tuple(f['dimensions'])
@@ -153,6 +155,16 @@ def get_feature_axial(case_id:str,feature_id:str,index:int):
         source,support=feature_arrays(case_id,m['signature'],feature_id)
         values[y:y+dy,x:x+dx]=source[:,:,k].T;valid[y:y+dy,x:x+dx]=support[:,:,k].T
     return Response(values.tobytes()+valid.tobytes(),media_type='application/octet-stream',headers={'Cache-Control':'no-cache'})
+
+@app.get('/api/runtime')
+def get_runtime():
+    from .portable import enabled
+    return JSONResponse({'application':'CoroCTAiomics','edition':'openday','portable':enabled(),'canImportPatients':enabled()},headers={'Cache-Control':'no-store'})
+
+@app.post('/api/patients/import')
+async def import_patient(request:Request):
+    from .portable import receive_import
+    return await receive_import(request)
 
 if (ROOT / 'dist').is_dir():
     @app.get('/viewer/{case_id}',include_in_schema=False)

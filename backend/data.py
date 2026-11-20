@@ -7,9 +7,7 @@ import hashlib
 import re
 from functools import lru_cache
 from pathlib import Path
-import nibabel as nib
 import numpy as np
-from scipy.ndimage import map_coordinates
 
 ROOT = Path(__file__).resolve().parents[1]
 CASE_INTERPRETATION = ('CPE is a lumen-excluded radiomic sampling region, not a tissue classification, plaque or disease map. '
@@ -32,6 +30,9 @@ def validate_case_config(conf):
     return {**conf,'patientId':pid}
 
 def catalog_configurations():
+    if os.environ.get("CORONARY_PORTABLE_HOME"):
+        from .portable import configurations
+        return configurations()
     override = os.environ.get('CORONARY_CATALOG_CONFIG')
     if not override and not os.environ.get('CORONARY_CASE_CONFIG'):
         from .registry import cases as registry_cases
@@ -67,6 +68,7 @@ def imaging_config(conf):
 
 def configuration_key(conf=None):
     conf = read_case_config() if conf is None else conf
+    if conf.get('portablePackage')==1:return conf['configurationKey']
     defaults = Path(conf['pipelineRoot'])/'config/defaults.py'
     if conf.get('configurationError'):raise ValueError(conf['configurationError'])
     return hashlib.sha256(json.dumps([imaging_config(conf),defaults.read_text()],sort_keys=True).encode()).hexdigest()
@@ -121,10 +123,12 @@ def configuration(conf=None):
     return conf, paths
 
 def image(path):
+    import nibabel as nib
     img = nib.load(str(path))
     return img, LPS_FROM_RAS @ img.affine
 
 def sample(data, affine_lps, points, order=0, outside=0):
+    from scipy.ndimage import map_coordinates
     points = np.asarray(points)
     inverse = np.linalg.inv(affine_lps)
     ijk = points.reshape(-1, 3) @ inverse[:3, :3].T + inverse[:3, 3]
@@ -169,3 +173,10 @@ def resample_frames(values, spacing):
     v = np.cross(tangent, u)
     return {"points": points.tolist(), "distances": distances.tolist(), "radii": radius.tolist(),
             "u": u.tolist(), "v": v.tolist(), "tangents": tangent.tolist()}
+
+
+def case_directory(case_id):
+    if os.environ.get('CORONARY_PORTABLE_HOME'):
+        from .portable import home
+        return home()/'patients'/case_id
+    return ROOT/'cache'/case_id
