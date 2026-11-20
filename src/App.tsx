@@ -15,7 +15,7 @@ import {loadAxialVolume,type AxialVolume} from './axialVolume';
 import {ResourceCache} from './resourceCache';
 import {AiPanel} from './AiPanel';
 import {restoreView,saveView} from './viewState';
-import {attenuationBands,attenuationRange,highHuThreshold} from './cpeVolumeData';
+import {attenuationLegend,attenuationRange,highHuThreshold} from './cpeVolumeData';
 import {useWindowLevel,type WindowLevel} from './useWindowLevel';
 
 const initial:Controls={render3d:'anatomy',volumePreset:'balanced',volumeDensity:.9,volumeBands:{fat:1.05,low:2,intermediate:0,high:2},volumeLighting:'unlit',volumeContext:.5,volumeAdaptiveHighHu:true,volumeAdaptiveTissues:true,volumeReferenceFade:.8,vessel:'LAD',index:30,curvedAngle:0,straightAngle:0,featureIds:{LAD:'',LCx:'',RCA:''},featureOpacity:.7,featureScale:'cohort',cpeVisible:false,cprAntialias:true,smoothEdges:true,smoothMeshes:true,aorta:true,lumen:true,centerline:true,cpe:{LAD:true,LCx:true,RCA:true},cpeOpacity:0.2,lumenOpacity:1,raw:true,context:false,width:800,level:250,colors:{LAD:'#e7636b',LCx:'#56a8e8',RCA:'#efa343'},side:'merged'};
@@ -46,7 +46,6 @@ export default function App({patientId,patientLabel,toolbarHost,active=true,onRe
   const featureInfo=availableFeatures.find(f=>f.id===featureId);
   const feature=featureCache&&featureCache.data===data&&featureInfo?featureCache.cache.get(featureId):undefined;
   const tissueReference=c.volumeAdaptiveHighHu&&c.volumeAdaptiveTissues&&data?.tissueReference?.available?data.tissueReference:undefined;
-  const referenceMode=tissueReference?'multi':c.volumeAdaptiveHighHu&&data?.bloodPoolReference?.available?'blood':'fixed';
   const highThreshold=highHuThreshold(data?.bloodPoolReference,c.volumeAdaptiveHighHu);
   const scale=featureInfo?featureScale(featureInfo,c.featureScale):undefined;
   const cohort=scale&&!Array.isArray(scale)?scale:undefined;
@@ -102,27 +101,6 @@ export default function App({patientId,patientLabel,toolbarHost,active=true,onRe
   return <>
     {active&&toolbarHost&&createPortal(<>
       <button ref={aiButton} className="ai-toggle" aria-expanded={aiOpen} aria-controls="ai-results" onClick={()=>setAiOpen(value=>!value)} disabled={!bootDone}>Show AI report</button>
-      <details className="layers" inert={!bootDone&&!error}><summary aria-label="Layers" title="Viewer settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true"><path d="M9.5 2h5l.5 3 1.7 1 2.9-1 2.5 4.3-2.3 2v2l2.3 2-2.5 4.3-2.9-1-1.7 1-.5 3h-5l-.5-3-1.7-1-2.9 1-2.5-4.3 2.3-2v-2l-2.3-2L4.4 5l2.9 1L9 5Z"/><circle cx="12" cy="12.3" r="3.2"/></svg></summary><div className="layer-menu">
-        <button className="mask-toggle" aria-label="CPE masks" aria-pressed={c.cpeVisible} onClick={()=>update('cpeVisible',!c.cpeVisible)}>CPE masks<span aria-hidden="true">{c.cpeVisible?'On':'Off'}</span></button>
-        <div className="layer-window">
-      <label className="window">W<input aria-label="Window width" type="number" min="1" max="3000" value={c.width} onChange={e=>update('width',Math.max(1,+e.target.value))}/></label>
-      <label className="window">L<input aria-label="Window level" type="number" value={c.level} onChange={e=>update('level',+e.target.value)}/></label>
-        </div>
-        <label><input type="checkbox" checked={c.smoothMeshes} onChange={e=>update('smoothMeshes',e.target.checked)}/>Smooth meshes</label>
-        <label title="Straightened CT only. Filters undersampled pixels; the effect can be very subtle at high display resolution. Does not remove geometric background warping."><input type="checkbox" checked={c.cprAntialias} onChange={e=>update('cprAntialias',e.target.checked)}/>Pixel antialiasing</label>
-        <label><input type="checkbox" checked={c.smoothEdges} onChange={e=>update('smoothEdges',e.target.checked)}/>Smooth edges</label>
-        <label><input type="checkbox" disabled={!data?.surfaces.ascending_aorta} checked={c.aorta} onChange={e=>update('aorta',e.target.checked)}/>Ascending aorta</label>
-        <label className="slider">Aorta opacity<input aria-label="Aorta opacity" type="range" min="0" max="1" step=".01" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
-        <label><input type="checkbox" checked={c.lumen} onChange={e=>update('lumen',e.target.checked)}/>Lumen</label>
-        <label className="slider">Lumen opacity<input aria-label="Lumen opacity" type="range" min="0" max="1" step=".01" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
-        <label><input type="checkbox" checked={c.centerline} onChange={e=>update('centerline',e.target.checked)}/>Centerlines</label>
-        {vessels.map(v=><div className="layer-row" key={v}><label><input type="checkbox" checked={c.cpe[v]} onChange={e=>update('cpe',{...c.cpe,[v]:e.target.checked})}/>{v} CPE</label><input type="color" aria-label={`${v} CPE color`} value={c.colors[v]} onChange={e=>update('colors',{...c.colors,[v]:e.target.value})}/></div>)}
-        <label className="slider">CPE opacity<input aria-label="CPE opacity" type="range" min="0" max=".85" step=".01" value={c.cpeOpacity} onChange={e=>update('cpeOpacity',+e.target.value)}/></label>
-        <label className="slider">Map opacity<input aria-label="Feature map opacity" type="range" min="0" max="1" step=".01" value={c.featureOpacity} onChange={e=>update('featureOpacity',+e.target.value)}/></label>
-        <label><input type="checkbox" checked={c.raw} onChange={e=>update('raw',e.target.checked)}/>CCTA</label>
-        <label><input type="checkbox" checked={c.context} onChange={e=>update('context',e.target.checked)}/>3D plane</label>
-        <div className="layer-menu-footer"><button title="Reset camera and CPR rotations" onClick={e=>{scene.current?.reset();setC(old=>({...old,curvedAngle:0,straightAngle:0}));const menu=e.currentTarget.closest('details');if(menu)menu.open=false;}} disabled={!ready}>Reset</button></div>
-      </div></details>
     </>,toolbarHost)}
     <main inert={!bootDone&&!error} aria-busy={(!bootDone&&!error)||!!featureInfo&&!feature}>
     <div className="vessel-toolbar" role="toolbar" aria-label="Vessel and radiomic map controls">
@@ -132,34 +110,17 @@ export default function App({patientId,patientLabel,toolbarHost,active=true,onRe
       {mapsVisible&&availableFeatures.length>0&&<select className="feature-select" aria-label="Radiomic feature map" value={featureId} onChange={e=>update('featureIds',{...c.featureIds,[c.vessel]:e.target.value})}>
         {availableFeatures.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
       </select>}
-      {featureInfo&&<select className="scale-select" aria-label="Feature scale" value={scaleMode} title="Derivation reference: shared cohort percentiles. Balanced and Raw zero: patient-specific scales." onChange={e=>update('featureScale',e.target.value as Controls['featureScale'])}><option value="cohort" disabled={!featureInfo.cohortReference}>Derivation reference</option><option value="balanced">Balanced</option><option value="raw">Raw zero</option></select>}
       {featureInfo&&scale&&<div className="feature-scale" aria-label="Feature color scale" title={`${featureInfo.name}: ${cohort?`local feature percentile in ${cohort.nPatients} derivation patients; equal patient weights; reference ${cohort.id}`:scaleMode==='balanced'?'patient 2nd percentile / median / 98th percentile':'patient raw, zero-centered'}`}><i style={{background:FEATURE_GRADIENT}}/><div>{(cohort?['P0','P50','P100']:(scale as [number,number,number]).map(featureNumber)).map((label,i)=><span key={i}>{label}</span>)}</div></div>}
-      {cohort&&<span className="cohort-reference-count" title="Provisional voxel-wise derivation reference; colors represent feature percentiles.">{cohort.nPatients} reference patients</span>}
       {featureInfo&&!feature&&<span className="map-loading">Loading map…</span>}
     </div>
     {error&&<div className="error" role="alert">{error}<button onClick={()=>location.reload()}>Reload</button></div>}
     <div className="workspace">
       <section className="panel overview" aria-label={aiOpen?'AI report':'3D coronary view'}>
         <div className="overview-scene-layer" inert={aiOpen} aria-hidden={aiOpen}><h2>3D</h2>
-        {c.render3d==='cpe'&&<div className="render3d-controls">
-          <details className="volume-settings"><summary aria-label="CPE volume settings">Settings</summary><div className="volume-menu">
-            <label title="Experimental display calibration; attenuation resemblance does not identify tissue composition.">Reference<select aria-label="Tissue rendering reference" value={referenceMode} onChange={e=>setC(old=>({...old,volumeAdaptiveHighHu:e.target.value!=='fixed',volumeAdaptiveTissues:e.target.value==='multi'}))}>
-              <option value="fixed">Fixed HU</option><option value="blood" disabled={!data?.bloodPoolReference?.available}>Blood pool</option><option value="multi" disabled={!data?.tissueReference?.available}>Multi-reference</option>
-            </select></label>
-            <output className="blood-pool-reference" aria-label="High HU threshold" title={data?.bloodPoolReference?.available?`Aortic blood: median ${Math.round(data.bloodPoolReference.p50HU!)} HU; P99 ${Math.round(data.bloodPoolReference.p99HU!)} HU. Threshold = max(350, P99). Experimental display reference.`:data?.bloodPoolReference?.reason??'No prepared blood-pool reference; using fixed 350 HU.'}>{Math.round(highThreshold)} HU · {referenceMode!=='fixed'?'aortic P99':'fixed'}</output>
-            {tissueReference&&<>
-              <output className="blood-pool-reference" aria-label="Tissue reference medians" title="Native HU medians: CPE fat-range voxels and eroded myocardium. Experimental display references, not plaque labels.">Fat {Math.round(tissueReference.fat!.p50HU)} · Muscle {Math.round(tissueReference.myocardium!.p50HU)} HU</output>
-              <label title="Fade opacity where attenuation resembles the sampled blood or myocardium. Overlapping plaque intensities can also fade; set to zero to inspect without this fade.">Blood/muscle fade<input aria-label="Blood and muscle fade" type="range" min="0" max="1" step=".05" value={c.volumeReferenceFade} onChange={e=>update('volumeReferenceFade',+e.target.value)}/></label>
-            </>}
-            <label>Density<input aria-label="CPE volume density" type="range" min="0" max="2" step=".05" value={c.volumeDensity} onChange={e=>update('volumeDensity',+e.target.value)}/></label>
-            {attenuationBands.map(band=><label key={band.id} title={attenuationRange(band.id,highThreshold,tissueReference)}>{band.label}<input aria-label={`${band.label} opacity`} type="range" min="0" max="2" step=".05" value={c.volumeBands[band.id]} onChange={e=>update('volumeBands',{...c.volumeBands,[band.id]:+e.target.value})}/></label>)}
-            <label>Context<input aria-label="CPE anatomical context opacity" type="range" min="0" max="1" step=".01" value={c.volumeContext} onChange={e=>update('volumeContext',+e.target.value)}/></label>
-          </div></details>
-        </div>}
         <div className="scene" ref={sceneHost}/>{!ready&&<span className="loading">Loading…</span>}
         {c.render3d==='cpe'&&volumeStatus.phase==='preparing'&&<span className="volume-status" role="status">Preparing CPE volume…</span>}
         {c.render3d==='cpe'&&volumeStatus.phase==='error'&&<div className="volume-status" role="alert">{volumeStatus.message}<button onClick={()=>scene.current?.retryVolume()}>Retry</button></div>}
-        {c.render3d==='cpe'&&volumeStatus.phase==='ready'&&<div className="volume-legend" aria-label="CPE CT attenuation bands" title="Display bands in native HU, not validated plaque or histological classifications. Colors apply only to saved CPE voxels; they are independent of the radiomic-map palette.">{attenuationBands.map(band=><span key={band.id} title={attenuationRange(band.id,highThreshold,tissueReference)}><i style={{background:band.color}}/>{band.label}</span>)}</div>}
+        {c.render3d==='cpe'&&volumeStatus.phase==='ready'&&<div className="volume-legend" aria-label="CPE CT attenuation bands" title="Display bands in native HU, not validated plaque or histological classifications. Colors apply only to saved CPE voxels; they are independent of the radiomic-map palette.">{attenuationLegend.map(band=><span key={band.id} title={`${band.description} · ${attenuationRange(band.id,highThreshold,tissueReference)}`}><i style={{background:band.color}}/>{band.label}</span>)}</div>}
         </div>
       {data&&<AiPanel key={data.patientId} patientId={data.patientId} patientLabel={patientLabel} open={active&&aiOpen} onClose={closeAi}/>}
       </section>

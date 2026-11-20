@@ -13,7 +13,7 @@ import {binary, rgba, vessels, type Case, type Controls, type Vec3, type Vessel,
 import {compositeFeature,type FeaturePlane} from './slices';
 import {cameraBasis,cubeSvg,drawCube} from './orientation';
 import type {AxialVolume} from './axialVolume';
-import {packCpeVolume,attenuationBands,volumePresets} from './cpeVolumeData';
+import {packCpeVolume,attenuationLegend,volumePresets} from './cpeVolumeData';
 import {CpeVolumeRenderer} from './cpeVolume';
 
 export interface CpeVolumeStatus {phase:'idle'|'preparing'|'ready'|'error';message?:string}
@@ -182,8 +182,8 @@ export class Scene {
       const ctx=out.getContext('2d')!,scale=image.width/width;ctx.drawImage(image,0,0);drawCube(ctx,basis,8*scale,out.height-76*scale,68*scale);
       if(this.current?.render3d==='cpe'&&this.volumeRenderer){
         ctx.font=`${10*scale}px system-ui`;ctx.fillStyle='#c4d1da';ctx.fillText(`CPE volume · ${volumePresets[this.current.volumePreset]} · HU bands`,10*scale,20*scale);
-        const rows:{band:typeof attenuationBands[number];width:number}[][]=[[]];let used=0;
-        for(const band of attenuationBands){
+        const rows:{band:typeof attenuationLegend[number];width:number}[][]=[[]];let used=0;
+        for(const band of attenuationLegend){
           const width=ctx.measureText(band.label).width+24*scale;
           if(used+width>out.width-100*scale&&rows.at(-1)!.length){rows.push([]);used=0;}
           rows.at(-1)!.push({band,width});used+=width;

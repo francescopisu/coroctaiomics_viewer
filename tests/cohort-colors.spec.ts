@@ -14,17 +14,16 @@ test('cohort percentiles preserve ties, tails and shared colors independently of
 });
 
 const dense:CohortReference={id:'dense-test',nPatients:16,knots:Array.from({length:1001},(_,i)=>[(2*i/1000-1)**3,Math.max(0,i/1000-.0002),Math.min(1,i/1000+.0002)])};
-const slider=async(page:any,value:number)=>page.getByLabel('Feature map opacity',{exact:true}).evaluate((el:HTMLInputElement,n:number)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(el,String(n));el.dispatchEvent(new Event('input',{bubbles:true}));},value);
 
-test('all four image views use cohort colors with a full-size lookup and no extra asset downloads on scale changes',async({page})=>{
+test('all four image views use cohort colors with a full-size lookup and no extra asset downloads when maps are toggled',async({page})=>{
   test.setTimeout(120000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   const {requests}=await residentPhantoms(page,{cohortReference:dense,featureValue:.25});
   await page.goto('/viewer/96');await expect(page.locator('.resident-viewer.is-active')).toHaveAttribute('data-ready','true');
   const native=await page.locator('.cross canvas').evaluate(c=>(c as HTMLCanvasElement).toDataURL());
   await page.getByRole('button',{name:'Show radiomic maps',exact:true}).click();await expect(page.locator('main')).toHaveAttribute('aria-busy','false');
-  await expect(page.getByLabel('Feature scale',{exact:true})).toHaveValue('cohort');await expect(page.getByLabel('Feature color scale',{exact:true})).toHaveText('P0P50P100');await expect(page.getByText('16 reference patients',{exact:true})).toBeVisible();
-  await page.getByLabel('Layers',{exact:true}).click();await slider(page,1);await page.getByLabel('Layers',{exact:true}).click();
-  const rgb=featureColor(.25,dense);
+  await expect(page.getByLabel('Feature scale',{exact:true})).toHaveCount(0);await expect(page.getByLabel('Feature color scale',{exact:true})).toHaveText('P0P50P100');await expect(page.getByText('16 reference patients',{exact:true})).toHaveCount(0);
+  const gray=(-100-250+800/2)/800*255;
+  const rgb=featureColor(.25,dense).map(v=>v*.7+gray*.3);
   // Count the expected color in both GPU CPRs and both CPU slice views.
   for(const selector of ['.straight','.curved','.cross','.axial']){
     const png=await page.locator(selector).screenshot();
@@ -34,17 +33,16 @@ test('all four image views use cohort colors with a full-size lookup and no extr
     },{base64:png.toString('base64'),rgb});expect(count,selector).toBeGreaterThan(10);
   }
   const before=requests.length;
-  await page.getByLabel('Feature scale',{exact:true}).selectOption('balanced');await expect(page.getByLabel('Feature color scale')).not.toHaveText('P0P50P100');
-  await page.getByLabel('Feature scale',{exact:true}).selectOption('raw');await page.getByLabel('Feature scale',{exact:true}).selectOption('cohort');
-  expect(requests.slice(before).filter(p=>p.includes('/assets/'))).toEqual([]);
   await page.screenshot({path:'test-results/cohort-colors.png'});
   await page.getByRole('button',{name:'Show radiomic maps',exact:true}).click();expect(await page.locator('.cross canvas').evaluate(c=>(c as HTMLCanvasElement).toDataURL())).toBe(native);
+  await page.getByRole('button',{name:'Show radiomic maps',exact:true}).click();await expect(page.getByLabel('Feature color scale')).toHaveText('P0P50P100');
+  expect(requests.slice(before).filter(p=>p.includes('/assets/'))).toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test('unmatched maps retain balanced coloring and disable the cohort option',async({page})=>{
+test('unmatched maps retain balanced coloring with a numerical legend',async({page})=>{
   await residentPhantoms(page);await page.goto('/viewer/96');await expect(page.locator('.resident-viewer.is-active')).toHaveAttribute('data-ready','true');
   await page.getByRole('button',{name:'Show radiomic maps',exact:true}).click();await expect(page.locator('main')).toHaveAttribute('aria-busy','false');
-  await expect(page.getByLabel('Feature scale',{exact:true})).toHaveValue('balanced');await expect(page.locator('.scale-select option[value=cohort]')).toBeDisabled();
+  await expect(page.getByLabel('Feature scale',{exact:true})).toHaveCount(0);await expect(page.getByLabel('Feature color scale')).not.toHaveText('P0P50P100');
   await expect(page.getByText('16 reference patients',{exact:true})).toHaveCount(0);
 });
