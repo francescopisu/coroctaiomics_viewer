@@ -385,3 +385,12 @@ The original CT, masks, radiomic maps and PRI inputs remain unchanged. No extra
 volume downloads are required; fade changes update only transfer functions.
 Hard-refresh after updating reference metadata. Context, Aorta opacity and Lumen
 opacity remain linked across both 3D modes, starting at 50%.
+
+Radiomic-map performance: cohort knots are stored in a small, nearest-sampled
+RGBA32F GPU texture instead of a large dynamically indexed GLSL constant array.
+The same CDF/midrank calculation still follows scalar interpolation. Transparent
+feature pixels skip percentile lookup. The feature palette is reused across
+frames; slice images are cached separately from crosshairs/annotations, and
+moving the selected vessel index updates CPR markers without redrawing unchanged
+CPR images. These changes leave source values, reference statistics, colors and
+patient AI results unchanged.

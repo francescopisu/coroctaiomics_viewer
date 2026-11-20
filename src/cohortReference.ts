@@ -9,25 +9,23 @@ export function cohortPosition(value:number,reference:CohortReference):number{
   const lower=knots[lo-1],t=(value-lower[0])/(upper[0]-lower[0]);
   return lower[2]+t*(upper[1]-lower[2]);
 }
-/** Binary search uses reference knots directly, avoiding a uniform-HU lookup
- * that would lose precision for strongly skewed feature distributions. */
-export function cohortShader(reference:CohortReference){
-  const f=(x:number)=>x.toExponential(12),knots=reference.knots,n=knots.length,steps=Math.ceil(Math.log2(n))+1;
+/** The reference lives in a tiny RGBA32F texture, not a dynamically indexed
+ * constant array that some Windows drivers compile into expensive code. */
+export function cohortShader(){
   return `
-    const vec3 cohortKnots[${n}] = vec3[${n}](${knots.map(k=>`vec3(${k.map(f).join(',')})`).join(',')});
-    int cohortLo=0, cohortHi=${n-1};
-    for(int searchStep=0;searchStep<${steps};++searchStep){
+    int cohortLo=0, cohortHi=cohortKnotCount-1;
+    for(int searchStep=0;searchStep<16;++searchStep){
       if(cohortLo>=cohortHi)break;
       int cohortMid=(cohortLo+cohortHi)/2;
-      if(cohortKnots[cohortMid].x<value)cohortLo=cohortMid+1;else cohortHi=cohortMid;
+      if(texelFetch(cohortReferenceTexture,ivec2(cohortMid,0),0).x<value)cohortLo=cohortMid+1;else cohortHi=cohortMid;
     }
-    vec3 cohortUpper=cohortKnots[cohortLo];
+    vec3 cohortUpper=texelFetch(cohortReferenceTexture,ivec2(cohortLo,0),0).xyz;
     float intensity;
-    if(value<cohortKnots[0].x)intensity=0.0;
-    else if(value>cohortKnots[${n-1}].x)intensity=1.0;
+    if(value<texelFetch(cohortReferenceTexture,ivec2(0,0),0).x)intensity=0.0;
+    else if(value>texelFetch(cohortReferenceTexture,ivec2(cohortKnotCount-1,0),0).x)intensity=1.0;
     else if(value==cohortUpper.x)intensity=0.5*(cohortUpper.y+cohortUpper.z);
     else{
-      vec3 cohortLower=cohortKnots[max(0,cohortLo-1)];
+      vec3 cohortLower=texelFetch(cohortReferenceTexture,ivec2(max(0,cohortLo-1),0),0).xyz;
       intensity=mix(cohortLower.z,cohortUpper.y,clamp((value-cohortLower.x)/max(cohortUpper.x-cohortLower.x,1.0e-30),0.0,1.0));
     }
   `;

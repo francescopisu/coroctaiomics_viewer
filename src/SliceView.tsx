@@ -23,12 +23,12 @@ export function SliceView({kind,plane,data,c,onSelect,onNavigate,onWindowLevel,a
     if(!plane)return;const lumen=plane.lumenField??(plane.feature?.displayMask?Float32Array.from(plane.lumen):undefined),cpe=plane.cpeField??(plane.feature?.displayMask?Float32Array.from(plane.feature.displayMask,v=>v/255):undefined);
     return lumen&&cpe?{lumen:contours(lumen,plane.width,plane.height),cpe:contours(cpe,plane.width,plane.height)}:undefined;
   },[plane]);
-  useEffect(()=>{
-    const canvas=ref.current;if(!canvas||!active)return;const ctx=canvas.getContext('2d')!;
-    canvas.width=plane?.width??50;canvas.height=plane?.height??50;if(!plane)return;
+  const background=useMemo(()=>{
+    if(!plane)return;
+    const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d')!;
     const temp=document.createElement('canvas');temp.width=plane.width;temp.height=plane.height;
-    const display=loops?new Uint8ClampedArray(rgba(plane.ct,0,plane.ct.length,c)):pixels(plane,c);
-    if(loops&&plane.feature)compositeFeature(display,plane.feature,c.featureOpacity,c.featureScale);
+    const display=(loops||kind==='axial'&&plane.feature)?new Uint8ClampedArray(rgba(plane.ct,0,plane.ct.length,c)):pixels(plane,c);
+    if(loops&&plane.feature&&kind!=='axial')compositeFeature(display,plane.feature,c.featureOpacity,c.featureScale);
     temp.getContext('2d')!.putImageData(new ImageData(display,plane.width,plane.height),0,0);
     canvas.width=kind==='cross'?1024:600;canvas.height=canvas.width*plane.height/plane.width;
     ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(temp,0,0,canvas.width,canvas.height);
@@ -44,6 +44,12 @@ export function SliceView({kind,plane,data,c,onSelect,onNavigate,onWindowLevel,a
       if(c.cpeVisible&&c.cpe[c.vessel])draw(loops.cpe,c.colors[c.vessel],0.95,plane.feature?0:c.cpeOpacity);
       if(c.lumen)draw(loops.lumen,'#ffffff',c.lumenOpacity,0.08*c.lumenOpacity);
     }
+    return canvas;
+  },[plane,loops,kind,size,c.vessel,c.width,c.level,c.raw,c.featureOpacity,c.featureScale,c.smoothEdges,c.cpeVisible,c.cpe,c.colors,c.cpeOpacity,c.lumen,c.lumenOpacity]);
+  useEffect(()=>{
+    const canvas=ref.current;if(!canvas||!active||!plane||!background)return;const ctx=canvas.getContext('2d')!;
+    canvas.width=background.width;canvas.height=background.height;ctx.drawImage(background,0,0);
+    const cssSide=Math.max(1,size),pixel=canvas.width/cssSide;
     const ijk=worldIndex(data.geometry.affineLPS,data.vessels[c.vessel].points[c.index]);
     const x=kind==='cross'?canvas.width/2:(ijk[0]+0.5)/plane.width*canvas.width,y=kind==='cross'?canvas.height/2:(ijk[1]+0.5)/plane.height*canvas.height;
     canvas.dataset.centrelineIndex=String(c.index);canvas.dataset.distanceMm=String(f.distances[c.index]);canvas.dataset.sliceIndex=String(axialIndex(data,c));canvas.dataset.crosshairX=String(x);canvas.dataset.crosshairY=String(y);
@@ -63,7 +69,7 @@ export function SliceView({kind,plane,data,c,onSelect,onNavigate,onWindowLevel,a
     ctx.fillText(directionLabel(basis.up),canvas.width/2,8*pixel);ctx.fillText(directionLabel(basis.up.map(v=>-v) as Vec3),canvas.width/2,canvas.height-21*pixel);
     ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillText(directionLabel(basis.right.map(v=>-v) as Vec3),8*pixel,canvas.height/2);ctx.textAlign='right';ctx.fillText(directionLabel(basis.right),canvas.width-8*pixel,canvas.height/2);
     drawCube(ctx,basis,8*pixel,canvas.height-64*pixel,56*pixel);
-  },[plane,c,data,kind,loops,size,active]);
+  },[background,plane,data,kind,size,active,c.vessel,c.index,c.axialSlice,reference]);
   return <div ref={host} className={`slice-image ${kind}${windowLevel.windowing?' is-windowing':''}`} tabIndex={0} role="group" aria-label={kind==='cross'?'Orthogonal slice navigation':'Axial slice navigation'} {...windowLevel.handlers}
     title={(kind==='cross'?'Scroll or left-drag vertically to move along the vessel. Lumen Øeq = diameter of a circle with the same unsmoothed lumen area.':'Scroll or left-drag vertically through native CT slices. Click to select the nearest vessel point.')+' Right-drag: left/right adjusts window width; up/down adjusts level.'}
     onKeyDown={e=>{let next:number|undefined;if(e.key==='ArrowDown')next=current+1;else if(e.key==='ArrowUp')next=current-1;else if(e.key==='PageDown')next=current+10;else if(e.key==='PageUp')next=current-10;else if(e.key==='Home')next=0;else if(e.key==='End')next=count-1;if(next!==undefined){e.preventDefault();onNavigate(clampSlice(next,count));}}}

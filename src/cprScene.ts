@@ -21,6 +21,7 @@ import {cprLayout} from './cprLayout';
 export class CprScene {
   private window:any;private renderers:any[];private objects:any[]=[];private layers:{mapper:any;actor:any;tf:any;alpha:any}[][]=[];
   private poly:any;private observer:ResizeObserver;private volume?:Volume;private feature?:FeatureVolume;private current?:Controls;private distances:number[][]=[[],[]];private sizes:number[][]=[];
+  private renderKey='';private markerFrame?:{d:Vec3;center:Vec3};
   private points:Vec3[]=[];private disposed=false;private active=true;private centers:Vec3[]=[];private curvedSection:Vec3[]=[];private markerLength=96;
   constructor(private host:HTMLElement,private data:Case,private marker:(positions:CprMarker[])=>void){
     this.window=vtkGenericRenderWindow.newInstance({background:[0,0,0],listenWindowResize:false});this.window.setContainer(host);
@@ -54,10 +55,14 @@ export class CprScene {
     const image=index===3?this.feature?.image:index===2?(smooth?(this.feature?.displayImage??this.volume?.displayImage??this.volume?.images[2]):(this.feature?.outlineImage??this.volume?.images[2])):this.volume?.images[index];
     l.actor.setVisibility(!!this.volume&&!!image);l.mapper.setImageData(image??null);
   }));}
-  setVolume(volume?:Volume){this.volume=volume;this.bindImages();}
-  setFeature(feature?:FeatureVolume){this.feature=feature;this.bindImages();}
+  setVolume(volume?:Volume){if(this.volume===volume)return;this.volume=volume;this.renderKey='';this.bindImages();}
+  setFeature(feature?:FeatureVolume){if(this.feature===feature)return;this.feature=feature;this.renderKey='';this.bindImages();}
   update(c:Controls){
-    this.current=c;if(!this.volume||this.disposed||!this.active)return;this.bindImages();
+    this.current=c;if(!this.volume||this.disposed||!this.active)return;
+    const rect=this.host.getBoundingClientRect();
+    const renderKey=JSON.stringify([c.vessel,c.curvedAngle,c.straightAngle,c.width,c.level,c.raw,c.lumen,c.lumenOpacity,c.cpeVisible,c.cpe,c.cpeOpacity,c.colors,c.featureScale,c.featureOpacity,c.smoothEdges,c.cprAntialias,rect.width,rect.height,this.window.getApiSpecificRenderWindow().getSize()]);
+    if(this.renderKey===renderKey){this.updateSelectedPosition(c);this.updateMarkers();return;}
+    this.bindImages();
     const f=this.data.vessels[c.vessel],points=f.points;this.points=points;
     // vtkImageCPRMapper 37 maps model indices to texture coordinates as ijk/dim.
     // Texture centres lie at (ijk+0.5)/dim. Compensate only at the GPU boundary;
@@ -77,7 +82,7 @@ export class CprScene {
     // The OpenGL uniform path requires an actual quaternion, even though the core API also accepts matrices.
     const orientation=quat.create();quat.fromMat3(orientation,new Float32Array([...d,...e,...axis]));quat.normalize(orientation,orientation);
     const center=points[0].map((_,i)=>points.reduce((s,p)=>s+p[i],0)/points.length) as Vec3;
-    const rect=this.host.getBoundingClientRect(),aspect=rect.width/2/rect.height;
+    const aspect=rect.width/2/rect.height;this.markerFrame={d,center};
     // Both panels share the same horizontal physical scale and longitudinal
     // display extent. Normalize the longitudinal display coordinate to fill the
     // available height even when a wide rotation envelope controls camera fit.
@@ -87,13 +92,13 @@ export class CprScene {
         if(view===0){const straight=c.straightAngle*Math.PI/180;mapper.useStraightenedMode();mapper.setTangentDirection([Math.cos(straight),Math.sin(straight),0]);mapper.setWidth(width);}
         else {mapper.setTangentDirection([1,0,0]);mapper.setUniformOrientation(Array.from(orientation));mapper.useStretchedMode(center.map((x,i)=>x+halfVoxel[i]));
           mapper.getOrientedCenterline().setDistanceFunction((p:number[],q:number[])=>{const r=sub(p,q);return Math.max(1e-6,Math.sqrt(Math.max(0,dot(r,r)-dot(r,d)**2)));});mapper.setWidth(width);}
-        tf.removeAllPoints();alpha.removeAllPoints();
+        if(index!==3){tf.removeAllPoints();alpha.removeAllPoints();}
         if(index===0){tf.addRGBPoint(c.level-c.width/2,0,0,0);tf.addRGBPoint(c.level+c.width/2,1,1,1);alpha.addPoint(0,1);actor.setVisibility(c.raw);actor.getProperty().setOpacity(1);
           mapper.setViewSpecificProperties({OpenGL:{PixelFootprintAntialiasing:view===0&&c.cprAntialias}});}
         else if(index===3){
-          FEATURE_PALETTE.forEach((rgb,i)=>tf.addRGBPoint(i/(FEATURE_PALETTE.length-1),...rgb.map(x=>x/255)));alpha.addPoint(0,0);alpha.addPoint(1,1);
+          if(!tf.getSize()){FEATURE_PALETTE.forEach((rgb,i)=>tf.addRGBPoint(i/(FEATURE_PALETTE.length-1),...rgb.map(x=>x/255)));alpha.addPoint(0,0);alpha.addPoint(1,1);}
           actor.getProperty().setInterpolationTypeToLinear();actor.setVisibility(!!this.feature);actor.getProperty().setOpacity(c.featureOpacity);
-          if(this.feature)mapper.setViewSpecificProperties({OpenGL:{FeatureSamplingShader:this.feature.shader(c.featureScale,c.smoothEdges)}});
+          if(this.feature)mapper.setViewSpecificProperties({OpenGL:{FeatureSamplingShader:this.feature.shader(c.featureScale,c.smoothEdges),FeatureCohortReference:c.featureScale==='cohort'?this.feature.info.cohortReference:undefined}});
         }
         else {const rgb=index===1?[1,1,1]:hexColor(c.colors[c.vessel]);tf.addRGBPoint(0,...rgb);tf.addRGBPoint(1,...rgb);alpha.addPoint(0,0);alpha.addPoint(0.49,0);alpha.addPoint(0.5,1);alpha.addPoint(1,1);
           if(index===2&&c.smoothEdges&&(this.feature||this.volume?.displayImage)){
@@ -115,15 +120,22 @@ export class CprScene {
       const camera=this.renderers[view].getActiveCamera();
       camera.setFocalPoint(w/2,displayHeight/2,0);camera.setPosition(w/2,displayHeight/2,200);camera.setViewUp(0,1,0);
       camera.setParallelScale(parallelScale);this.renderers[view].resetCameraClippingRange();
-      this.centers[view]=[view===0?w/2:w/2+dot(sub(points[c.index],center),d),(height-this.distances[view][c.index])*yScale,0];
-      if(view===1)this.curvedSection=curvedSectionMarker(f,c.index,d,center,w,this.distances[view],displayHeight,this.data.sampling.widthPixels*this.data.sampling.resolutionMm);
       // Expose the visible image extent for UI verification, independent of markers.
       const bounds=layers[0].actor.getBounds(),extent=(bounds[3]-bounds[2])/(2*camera.getParallelScale())*100;
       this.host.dataset[view===0?'straightHeight':'curvedHeight']=extent.toFixed(6);
       this.host.dataset[view===0?'straightWidth':'curvedWidth']=((bounds[1]-bounds[0])/(2*camera.getParallelScale()*aspect)*100).toFixed(6);
       this.host.dataset[view===0?'straightPixelsPerMm':'curvedPixelsPerMm']=(rect.height/(2*camera.getParallelScale())).toFixed(6);
     });
-    this.window.getRenderWindow().render();this.updateMarkers();
+    this.updateSelectedPosition(c);this.window.getRenderWindow().render();this.renderKey=renderKey;this.updateMarkers();
+  }
+  private updateSelectedPosition(c:Controls){
+    if(!this.markerFrame)return;const {d,center}=this.markerFrame,f=this.data.vessels[c.vessel],point=f.points[c.index];
+    this.layers.forEach((layers,view)=>{
+      const height=layers[0].mapper.getHeight(),[w,displayHeight]=this.sizes[view];
+      this.centers[view]=[view===0?w/2:w/2+dot(sub(point,center),d),(height-this.distances[view][c.index])*displayHeight/height,0];
+    });
+    const [w,displayHeight]=this.sizes[1];
+    this.curvedSection=curvedSectionMarker(f,c.index,d,center,w,this.distances[1],displayHeight,this.data.sampling.widthPixels*this.data.sampling.resolutionMm);
   }
   private project(point:Vec3,view:number){
     // Use the renderer's viewport transform, matching GPU rasterization. The
