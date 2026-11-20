@@ -57,6 +57,12 @@ export const attenuationBands:{id:AttenuationBand;label:string;range:string;colo
   {id:'intermediate',label:'Intermediate',range:'30 to 350 HU',color:'#bb9680'},
   {id:'high',label:'High HU',range:'≥350 HU',color:'#e4edf3'},
 ];
+// Simplified teaching legend; rendering bands remain separate display controls.
+export const attenuationLegend=[
+  {...attenuationBands[0],label:'Fat',description:'Fat'},
+  {...attenuationBands[1],label:'Soft tissue (coronary wall, non-calcified plaque, connective tissue)',description:'Coronary wall, non-calcified plaque and connective tissue'},
+  {...attenuationBands[3],label:'Calcified plaque and other dense structures',description:'Calcified plaque and other dense structures'},
+];
 /** Inverse piecewise display calibration; source HU remain unchanged. */
 export function calibratedHu(value:number,reference:TissueReference){
   const anchors=reference.anchors!;
