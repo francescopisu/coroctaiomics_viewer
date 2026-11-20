@@ -1,3 +1,4 @@
+import {cohortPosition,type CohortReference} from './cohortReference';
 // Matplotlib's standard Jet channel breakpoints, sampled into a shared LUT.
 const jetChannels:number[][][]=[
   [[0,0],[.35,0],[.66,1],[.89,1],[1,.5]],
@@ -13,16 +14,22 @@ export const FEATURE_PALETTE=Array.from({length:256},(_,i)=>jetChannels.map(chan
 export const FEATURE_STOPS=FEATURE_PALETTE.map(rgb=>'#'+rgb.map(channel=>channel.toString(16).padStart(2,'0')).join(''));
 export const FEATURE_GRADIENT=`linear-gradient(to right,${FEATURE_STOPS.join(',')})`;
 export type FeatureScale=[number,number,number];
-export function featureScale(info:{limit:number;balanced?:FeatureScale},mode:'raw'|'balanced'):FeatureScale{return mode==='balanced'&&info.balanced?info.balanced:[-info.limit,0,info.limit];}
-export function featurePosition(value:number,scale:FeatureScale):number{
+export type FeatureMode='cohort'|'raw'|'balanced';
+export type ColorScale=FeatureScale|CohortReference;
+export function featureScale(info:{limit:number;balanced?:FeatureScale;cohortReference?:CohortReference},mode:FeatureMode):ColorScale{
+  if(mode==='cohort'&&info.cohortReference)return info.cohortReference;
+  return mode!=='raw'&&info.balanced?info.balanced:[-info.limit,0,info.limit];
+}
+export function featurePosition(value:number,scale:ColorScale):number{
+  if(!Array.isArray(scale))return cohortPosition(value,scale);
   const [lo,mid,hi]=scale;if(lo===hi||value===mid)return .5;
   return Math.max(0,Math.min(1,value<mid?.5*(value-lo)/Math.max(mid-lo,1e-30):.5+.5*(value-mid)/Math.max(hi-mid,1e-30)));
 }
-export function featureColor(value:number,scale:number|FeatureScale):number[]{
+export function featureColor(value:number,scale:number|ColorScale):number[]{
   const t=featurePosition(value,typeof scale==='number'?[-scale,0,scale]:scale);
   return FEATURE_PALETTE[Math.min(255,Math.floor(t*256))];
 }
-export function featurePixels(values:Float32Array,valid:Uint8Array,limit:number|FeatureScale,opacity:number){
+export function featurePixels(values:Float32Array,valid:Uint8Array,limit:number|ColorScale,opacity:number){
   const rgba=new Uint8ClampedArray(values.length*4),alpha=Math.round(Math.max(0,Math.min(1,opacity))*255);
   for(let i=0;i<values.length;i++)if(valid[i]&&Number.isFinite(values[i])){rgba.set(featureColor(values[i],limit),i*4);rgba[i*4+3]=alpha;}
   return rgba;

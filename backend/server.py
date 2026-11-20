@@ -84,8 +84,11 @@ def get_current_case():
 @app.get('/api/cases/{case_id}')
 def get_case(case_id: str):
     m = manifest(case_id)
+    from .cohort_reference import feature_maps
+    try: maps=feature_maps(m.get('featureMaps',{}))
+    except (OSError,ValueError,KeyError,TypeError) as error:raise HTTPException(503,f'Invalid radiomic cohort reference: {error}')
     return JSONResponse({**{k:v for k,v in m.items() if k not in ['assets','signature','configurationKey','sourceConfig']},
-                         'interpretation':CASE_INTERPRETATION},headers={'Cache-Control':'no-store'})
+                         'featureMaps':maps,'interpretation':CASE_INTERPRETATION},headers={'Cache-Control':'no-store'})
 
 @app.get('/api/cases/{case_id}/assets/{name}')
 def get_asset(case_id: str, name: str):
